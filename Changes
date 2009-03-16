@@ -1,7 +1,11 @@
 Revision history for Perl extension FlatFile::DataStore.
 
+0.03 Mon Mar 16 16:19:22 EDT 2009
+    - corrected MANIFEST to include Toc.pm and additional tests :-(
+    - otherwise no code changes from 0.02 below
 0.02  Mon Feb 23 14:17:54 EST 2009
     - added POD
+    - added Toc.pm
 0.01  Mon Feb 23 14:16:56 2009
     - original version; created by h2xs 1.23 with options
         -AX --skip-exporter --use-new-tests -n FlatFile::DataStore

@@ -3,7 +3,11 @@ Makefile.PL
 MANIFEST
 README
 t/FlatFile-DataStore.t
+t/FlatFile-DataStore-Preamble.t
+t/FlatFile-DataStore-Record.t
+t/FlatFile-DataStore-Toc.t
 lib/FlatFile/DataStore.pm
 lib/FlatFile/DataStore/Preamble.pm
 lib/FlatFile/DataStore/Record.pm
+lib/FlatFile/DataStore/Toc.pm
 META.yml                                 Module meta-data (added by MakeMaker)
