@@ -48,11 +48,11 @@ record.
 
 =head1 VERSION
 
-FlatFile::DataStore::Preamble version 0.04
+FlatFile::DataStore::Preamble version 0.05
 
 =cut
 
-our $VERSION = '0.04';
+our $VERSION = '0.05';
 
 use 5.008003;
 use strict;

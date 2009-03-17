@@ -1,4 +1,4 @@
-FlatFile-DataStore version 0.03
+FlatFile-DataStore version 0.05
 ===============================
 
 FlatFile::DataStore - Perl module that implements a flat file data
@@ -21,9 +21,6 @@ This module requires these other modules and libraries:
   URI::Escape
   Data::Omap
   Math::Int2Base
-  FlatFile::DataStore::Preamble;
-  FlatFile::DataStore::Record;
-  FlatFile::DataStore::Toc;
 
 COPYRIGHT AND LICENCE
 

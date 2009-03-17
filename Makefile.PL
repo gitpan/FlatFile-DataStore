@@ -5,7 +5,12 @@ use ExtUtils::MakeMaker;
 WriteMakefile(
     NAME              => 'FlatFile::DataStore',
     VERSION_FROM      => 'lib/FlatFile/DataStore.pm', # finds $VERSION
-    PREREQ_PM         => {}, # e.g., Module::Name => 1.1
+    PREREQ_PM         => {
+        'URI'            =>  1.35,
+        'URI::Escape'    =>  1.35,
+        'Data::Omap'     =>  0.06,
+        'Math::Int2Base' =>  0.03,
+    }, # e.g., Module::Name => 1.1
     ($] >= 5.005 ?     ## Add these new keywords supported since 5.005
       (ABSTRACT_FROM  => 'lib/FlatFile/DataStore.pm', # retrieve abstract from module
        AUTHOR         => 'Brad Baxter <bbaxter@cpan.org>') : ()),

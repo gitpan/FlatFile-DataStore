@@ -1,10 +1,14 @@
 # http://module-build.sourceforge.net/META-spec.html
 #XXXXXXX This is a prototype!!!  It will change in the future!!! XXXXX#
 name:         FlatFile-DataStore
-version:      0.04
+version:      0.05
 version_from: lib/FlatFile/DataStore.pm
 installdirs:  site
 requires:
+    Data::Omap:                    0.06
+    Math::Int2Base:                0.03
+    URI:                           1.35
+    URI::Escape:                   1.35
 
 distribution_type: module
 generated_by: ExtUtils::MakeMaker version 6.30

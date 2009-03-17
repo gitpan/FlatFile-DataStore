@@ -74,11 +74,11 @@ in FlatFile::DataStore::Tutorial.
 
 =head1 VERSION
 
-FlatFile::DataStore version 0.04
+FlatFile::DataStore version 0.05
 
 =cut
 
-our $VERSION = '0.04';
+our $VERSION = '0.05';
 
 use 5.008003;
 use strict;
@@ -1087,10 +1087,11 @@ sub initialize {
     croak qq/Can't initialize database: data files exist (e.g., $datafile)./
         if -e $datafile;
 
-    local $Data::Dumper::Pair   = ',';
-    local $Data::Dumper::Useqq  = 1;
-    local $Data::Dumper::Terse  = 1;
-    local $Data::Dumper::Indent = 0;  # make object a one-liner
+    local $Data::Dumper::Quotekeys = 0;
+    local $Data::Dumper::Pair      = '=>';
+    local $Data::Dumper::Useqq     = 1;
+    local $Data::Dumper::Terse     = 1;
+    local $Data::Dumper::Indent    = 0;  # make object a one-liner
 
     my $save = $self->dir;
     # delete dir, don't want in obj file
