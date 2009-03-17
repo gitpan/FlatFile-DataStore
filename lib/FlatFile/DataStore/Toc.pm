@@ -30,11 +30,11 @@ any of it's methods yourself.
 
 =head1 VERSION
 
-FlatFile::DataStore::Toc version 0.03
+FlatFile::DataStore::Toc version 0.04
 
 =cut
 
-our $VERSION = '0.03';
+our $VERSION = '0.04';
 
 use 5.008003;
 use strict;
@@ -276,29 +276,29 @@ sub tocfile {
 
 #---------------------------------------------------------------------
 
-=head1 OBJECT METHODS: ACCESSORS
+=head1 OBJECT METHODS: Accessors
 
 The following read/write methods set and return their respective
 attribute values if C<$value> is given.  Otherwise, they just return
 the value.
 
- $record->datastore()
+ $record->datastore( [$value] )
+ $record->string(    [$value] )
 
 The following methods expect an integer parm and return an integer
 value (even though these are stored in the tocfile as numbers in their
 respective bases).
 
- $record->datafnum()
- $record->keyfnum()
- $record->tocfnum()
- $record->keynum()
- $record->transnum()
- $record->create()
- $record->oldupd()
- $record->update()
- $record->olddel()
- $record->delete()
- $record->string()
+ $record->datafnum( [$value] )
+ $record->keyfnum(  [$value] )
+ $record->tocfnum(  [$value] )
+ $record->keynum(   [$value] )
+ $record->transnum( [$value] )
+ $record->create(   [$value] )
+ $record->oldupd(   [$value] )
+ $record->update(   [$value] )
+ $record->olddel(   [$value] )
+ $record->delete(   [$value] )
 
 =cut
 
@@ -323,7 +323,7 @@ Brad Baxter, E<lt>bbaxter@cpan.orgE<gt>
 
 =head1 COPYRIGHT AND LICENSE
 
-Copyright (C) 2008 by Brad Baxter
+Copyright (C) 2009 by Brad Baxter
 
 This library is free software; you can redistribute it and/or modify
 it under the same terms as Perl itself, either Perl version 5.8.8 or,

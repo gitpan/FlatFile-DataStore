@@ -74,11 +74,11 @@ in FlatFile::DataStore::Tutorial.
 
 =head1 VERSION
 
-FlatFile::DataStore version 0.03
+FlatFile::DataStore version 0.04
 
 =cut
 
-our $VERSION = '0.03';
+our $VERSION = '0.04';
 
 use 5.008003;
 use strict;
@@ -398,9 +398,9 @@ sub convert_datamax {
 
 #---------------------------------------------------------------------
 
-=head1 OBJECT METHODS, RECORD PROCESSING (C.R.U.D.)
+=head1 OBJECT METHODS, Record Processing (CRUD)
 
-=head2 create( $record_data, [$user_data] )
+=head2 create( $record_data[, $user_data] )
 
 Creates a record.  The parm C<$record_data> may be one of
 
@@ -558,7 +558,7 @@ sub create {
 
 #---------------------------------------------------------------------
 
-=head2 retrieve( $num, [$pos] )
+=head2 retrieve( $num[, $pos] )
 
 Retrieves a record.  The parm C<$num> may be one of
 
@@ -900,7 +900,7 @@ sub history {
 
 #---------------------------------------------------------------------
 
-=head1 OBJECT METHODS, ACCESSORS
+=head1 OBJECT METHODS, Accessors
 
 =head2 $ds->specs( [$omap] )
 
@@ -1672,7 +1672,7 @@ __END__
 
 =head1 CAVEATS
 
-This module is still in an experimental stage.  The tests and pod are
+This module is still in an experimental state.  The tests and pod are
 sparse.  When I start using it in production, I'll up the version to
 1.00.
 
@@ -1693,7 +1693,7 @@ Brad Baxter, E<lt>bbaxter@cpan.orgE<gt>
 
 =head1 COPYRIGHT AND LICENSE
 
-Copyright (C) 2008 by Brad Baxter
+Copyright (C) 2009 by Brad Baxter
 
 This library is free software; you can redistribute it and/or modify
 it under the same terms as Perl itself, either Perl version 5.8.8 or,

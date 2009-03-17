@@ -2,6 +2,7 @@ Changes
 Makefile.PL
 MANIFEST
 README
+utils/migrate_validate
 t/FlatFile-DataStore.t
 t/FlatFile-DataStore-Preamble.t
 t/FlatFile-DataStore-Record.t
@@ -10,4 +11,6 @@ lib/FlatFile/DataStore.pm
 lib/FlatFile/DataStore/Preamble.pm
 lib/FlatFile/DataStore/Record.pm
 lib/FlatFile/DataStore/Toc.pm
+lib/FlatFile/DataStore/Tutorial.pm
+lib/FlatFile/DataStore/FMTEYEWTK.pm
 META.yml                                 Module meta-data (added by MakeMaker)
