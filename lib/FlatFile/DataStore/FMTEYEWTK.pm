@@ -7,7 +7,7 @@ of FlatFile::DataStore.
 
 =head1 VERSION
 
-Discusses FlatFile::DataStore version 0.06.
+Discusses FlatFile::DataStore version 0.07.
 
 =head1 SYNOPSYS
 
