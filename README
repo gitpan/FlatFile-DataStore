@@ -1,5 +1,5 @@
-FlatFile-DataStore version 0.05
-===============================
+FlatFile-DataStore
+==================
 
 FlatFile::DataStore - Perl module that implements a flat file data
 store.

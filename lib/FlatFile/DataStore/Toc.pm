@@ -30,11 +30,11 @@ any of it's methods yourself.
 
 =head1 VERSION
 
-FlatFile::DataStore::Toc version 0.05
+FlatFile::DataStore::Toc version 0.06
 
 =cut
 
-our $VERSION = '0.05';
+our $VERSION = '0.06';
 
 use 5.008003;
 use strict;
@@ -49,6 +49,7 @@ my %Attrs = qw(
     datafnum  1
     keyfnum   1
     tocfnum   1
+    numrecs   1
     keynum    1
     transnum  1
     create    1
@@ -112,7 +113,7 @@ sub init {
         $self->tocfnum( $self->toc_getfnum( $datafint ) );
         $self->keynum(   $datafint == 0? -1: 0 );
         $self->$_( 0 )
-            for qw( keyfnum transnum create oldupd update olddel delete );
+            for qw( keyfnum numrecs transnum create oldupd update olddel delete );
         return $self;
     }
 
@@ -129,7 +130,7 @@ sub init {
     $self->$_( base2int $fields[ $i++ ], $fnumbase )
         for qw( datafnum keyfnum tocfnum );
     $self->$_( base2int $fields[ $i++ ], $keybase )
-        for qw( keynum );
+        for qw( numrecs keynum );
     $self->$_( base2int $fields[ $i++ ], $transbase )
         for qw( transnum create oldupd update olddel delete );
 
@@ -159,7 +160,7 @@ sub to_string {
     push @fields, int2base $self->$_(), $fnumbase, $fnumlen
         for qw( datafnum keyfnum tocfnum );
     push @fields, int2base $self->$_(), $keybase, $keylen
-        for qw( keynum );
+        for qw( numrecs keynum );
     push @fields, int2base $self->$_(), $transbase, $translen
         for qw( transnum create oldupd update olddel delete );
 
@@ -292,6 +293,7 @@ respective bases).
  $record->datafnum( [$value] )
  $record->keyfnum(  [$value] )
  $record->tocfnum(  [$value] )
+ $record->numrecs(  [$value] )
  $record->keynum(   [$value] )
  $record->transnum( [$value] )
  $record->create(   [$value] )
@@ -306,6 +308,7 @@ sub datastore {for($_[0]->{datastore} ){$_=$_[1]if@_>1;return$_}}
 sub datafnum  {for($_[0]->{datafnum}  ){$_=$_[1]if@_>1;return$_}}
 sub keyfnum   {for($_[0]->{keyfnum}   ){$_=$_[1]if@_>1;return$_}}
 sub tocfnum   {for($_[0]->{tocfnum}   ){$_=$_[1]if@_>1;return$_}}
+sub numrecs   {for($_[0]->{numrecs}   ){$_=$_[1]if@_>1;return$_}}
 sub keynum    {for($_[0]->{keynum}    ){$_=$_[1]if@_>1;return$_}}
 sub transnum  {for($_[0]->{transnum}  ){$_=$_[1]if@_>1;return$_}}
 sub create    {for($_[0]->{create}    ){$_=$_[1]if@_>1;return$_}}

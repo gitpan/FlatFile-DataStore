@@ -10,7 +10,7 @@ $Data::Dumper::Sortkeys = 1;
 
 BEGIN { use_ok('FlatFile::DataStore') };
 
-my $dir  = tempdir( CLEANUP => 0 );
+my $dir  = tempdir( CLEANUP => 1 );
 my $name = "example";
 my $desc = "Example+FlatFile::DataStore";
 
@@ -76,7 +76,7 @@ my $desc = "Example+FlatFile::DataStore";
         "{'create' => '+','delete' => '-','olddel' => '*','oldupd' => '#','update' => '='}",
         "crud()" );
     is( Dumper($ds->regx),
-        "qr/(?-xism:([+#=*-])([0-9]{8})([-0-9]{2})([-0-9]{2})([-0-9]{2})([-0-9])([-0-9]{4})([-0-9])([-0-9]{4})([-0-9])([-0-9]{4})([ -~]{10}))/",
+        "qr/(?-xism:([\\+\\#\\=\\*\\-])([0-9]{8})([-0-9]{2})([-0-9]{2})([-0-9]{2})([-0-9])([-0-9]{4})([-0-9])([-0-9]{4})([-0-9])([-0-9]{4})([ -~]{10}))/",
         "regx()" );
     is( Dumper($ds->specs),
         "{'indicator' => [0,1,'+#=*-']}{'date' => [1,8,'yyyymmdd']}{'transnum' => [9,2,'10']}{'keynum' => [11,2,'10']}{'reclen' => [13,2,'10']}{'thisfnum' => [15,1,'10']}{'thisseek' => [16,4,'10']}{'prevfnum' => [20,1,'10']}{'prevseek' => [21,4,'10']}{'nextfnum' => [25,1,'10']}{'nextseek' => [26,4,'10']}{'user' => [30,10,' -~']}",

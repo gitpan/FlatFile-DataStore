@@ -74,11 +74,11 @@ in FlatFile::DataStore::Tutorial.
 
 =head1 VERSION
 
-FlatFile::DataStore version 0.05
+FlatFile::DataStore version 0.06
 
 =cut
 
-our $VERSION = '0.05';
+our $VERSION = '0.06';
 
 use 5.008003;
 use strict;
@@ -101,26 +101,25 @@ use Data::Omap qw( :ALL );
 # globals:
 
 my %Preamble = qw(
-    user      1
-    indicator 1
-    date      1
-    keynum    1
-    reclen    1
-    transnum  1
-    thisfnum  1
-    thisseek  1
-    prevfnum  1
-    prevseek  1
-    nextfnum  1
-    nextseek  1
+    user        1
+    indicator   1
+    date        1
+    keynum      1
+    reclen      1
+    transnum    1
+    thisfnum    1
+    thisseek    1
+    prevfnum    1
+    prevseek    1
+    nextfnum    1
+    nextseek    1
     );
 
 my %Optional = qw(
-    dirmax    1
-    dirlev    1
-    tocmax    1
-    keymax    1
-    datamax   1
+    dirmax      1
+    dirlev      1
+    tocmax      1
+    keymax      1
     );
 
 # attributes that we generate (vs. user-supplied)
@@ -138,6 +137,7 @@ my %Generated = qw(
     keylen      1
     keybase     1
     toclen      1
+    datamax     1
     );
 
 # all attributes, including some more user-supplied ones
@@ -234,9 +234,9 @@ sub init {
         $self->crud(          $self->make_crud            );
         $self->dir(           $dir                        );  # dir not in uri
 
-        $self->toclen( 9             +  # blanks
-            3 *    $self->fnumlen  +  # data, toc, key
-                   $self->keylen   +  # keynum
+        $self->toclen( 10          +  # blanks
+            3 *    $self->fnumlen  +  # datafnum, tocfnum, keyfnum
+            2 *    $self->keylen   +  # numrecs keynum
             6 *    $self->translen +  # transnum and cruds
             length $self->recsep );
 
@@ -319,7 +319,10 @@ sub make_preamble_regx {
             # note: user regx must allow only /[ -~]/ (printable ascii)
             # not checked for here (here we just use user-supplied regx),
             # but checked for /[ -~]/ other places
-            if( /indicator|user/ ) {
+            if( /indicator/ ) {
+                $regx .= ($len == 1 ? "([\Q$parm\E])" : "([\Q$parm\E]{$len})");
+            }
+            elsif( /user/ ) {
                 $regx .= ($len == 1 ? "([$parm])" : "([$parm]{$len})");
             }
 
@@ -487,12 +490,9 @@ sub create {
         if length $transnum > $translen;
 
     # create a record
-    my $indicator = $self->crud->{'create'};
-    my $date      = now( $self->dateformat );
-
     my $preamble_parms = {
-        indicator =>   $indicator,
-        date      =>   $date,
+        indicator =>   $self->crud->{'create'},
+        date      =>   now( $self->dateformat ),
         transnum  => 0+$transint,
         keynum    => 0+$keyint,
         reclen    => 0+$reclen,
@@ -535,21 +535,22 @@ sub create {
     # ... datafnum and tocfnum set in new()
     my $toc = $self->new_toc( { num => $datafnum } );
 
-    $toc->keyfnum(   $keyfint         );
-    $toc->keynum(    $keyint          );
-    $toc->transnum(  $transint        );
-    $toc->create(    $toc->create + 1 );
+    $toc->keyfnum(   $keyfint          );
+    $toc->keynum(    $keyint           );
+    $toc->transnum(  $transint         );
+    $toc->create(    $toc->create  + 1 );
 
     $toc->write_toc( $toc->datafnum );
 
     # update top toc
 
-    $top_toc->datafnum( $toc->datafnum );
-    $top_toc->keyfnum(  $toc->keyfnum );
-    $top_toc->tocfnum(  $toc->tocfnum );
-    $top_toc->keynum(   $toc->keynum );
-    $top_toc->transnum( $toc->transnum );
-    $top_toc->create(   $top_toc->create + 1 );
+    $top_toc->datafnum( $toc->datafnum        );
+    $top_toc->keyfnum(  $toc->keyfnum         );
+    $top_toc->tocfnum(  $toc->tocfnum         );
+    $top_toc->keynum(   $toc->keynum          );
+    $top_toc->transnum( $toc->transnum        );
+    $top_toc->numrecs(  $top_toc->numrecs + 1 );
+    $top_toc->create(   $top_toc->create  + 1 );
 
     $top_toc->write_toc( 0 );
 
@@ -672,89 +673,75 @@ sub delete {
     $self->update_delete( 'delete', $obj, $record_data, $user_data );
 }
 
+#---------------------------------------------------------------------
+# udpate_delete(), called by update() and delete()
 sub update_delete {
-    my( $self, $which, $obj, $record_data, $user_data ) = @_;
+    my( $self, $this_action, $obj, $record_data, $user_data ) = @_;
 
-    my $this_action;
-    my $this_crud;
-    my $this_old;
-    my $which_old;
-    if( $which eq 'update' ) {
-        $this_action = "Update";
-        $this_crud   = $self->crud->{'update'};
-        $which_old   = 'oldupd';
-        $this_old    = $self->crud->{'oldupd'};
-    }
-    elsif( $which eq 'delete' ) {
-        $this_action = "Delete";
-        $this_crud   = $self->crud->{'delete'};
-        $which_old   = 'olddel';
-        $this_old    = $self->crud->{'olddel'};
-    }
-    else {
-        croak "Not recognized: $which";
-    }
+    croak qq/Bad call to update_delete()/ unless $this_action and $obj;
 
-    # get preamble string and keynum from object
-    my $prevpreamble;
-    my $keyint;
-    my $prevind;
-    my $prevfnum;
-    my $prevseek;
-    my $data_ref;
-    if( my $reftype = ref $obj ) {
+    # get values from obj, record_data, user_data
+    my( $prevpreamble,
+        $keyint,
+        $prevind,
+        $prevfnum,
+        $prevseek,
+        $prevuser,
+        $data_ref
+        );
+
+    if( my $reftype = ref $obj ) {  # Preamble or Record
         $prevpreamble = $obj->string;
         $keyint       = $obj->keynum;
         $prevind      = $obj->indicator;
         $prevfnum     = $obj->thisfnum;
         $prevseek     = $obj->thisseek;
-        if( $reftype eq "FlatFile::DataStore::Record" ) {
-            $data_ref  = $obj->data unless defined $record_data;
-            $user_data = $obj->user unless defined $user_data;
-        }
+        $prevuser     = $obj->user;
+        $data_ref     = $obj->data if $reftype =~ /Record/;
     }
     else {
-        $prevpreamble = $obj;
+        $prevpreamble = $obj;  # string
         my $parms     = $self->burst_preamble( $prevpreamble );
         $keyint       = $parms->{'keynum'};
-        $prevind      = $parms->{'prevind'};
+        $prevind      = $parms->{'indicator'};
         $prevfnum     = $parms->{'thisfnum'};
         $prevseek     = $parms->{'thisseek'};
+        $prevuser     = $parms->{'user'};
     }
-    # preamble is sentinel for success
-    croak qq/Bad call to $which()/ unless $prevpreamble;
 
+    $user_data = $prevuser unless defined $user_data;
+
+    if( defined $record_data ) {
+        if( my $reftype = ref $record_data ) {
+            if( $reftype eq "SCALAR" ) {
+                $data_ref = $record_data; }
+            elsif( $reftype =~ /Record/ ) {
+                $data_ref  = $record_data->data; }
+        }
+        else { $data_ref = \$record_data }
+    }
+
+    croak qq/No record data./ unless $data_ref;
+
+    # check if this action is allowed
     my $create = $self->crud->{'create'};
     my $update = $self->crud->{'update'};
     my $delete = $self->crud->{'delete'};
-    my $regx   = qr/[$create$update$delete]/;
-    croak qq/$this_action not allowed: "$prevind"/
-        unless $prevind =~ $regx;
 
-    # study parms for alternative calling schemes
-    # get rec data from parms
-    # get user data from parms
-    unless( $data_ref ) {
-        if( my $reftype = ref $record_data ) {
-            if( $reftype eq "SCALAR" ) {
-                $data_ref = $record_data;
-            }
-            elsif( $reftype eq "FlatFile::DataStore::Record" ) {
-                $data_ref = $record_data->data;    
-                $user_data = $record_data->user
-                    unless defined $user_data;
-            }
-            else {
-                croak qq/Unrecognized ref type: $reftype/;
-            }
-        }
-        else {
-            $data_ref = \$record_data;
-        }
+    my $this_old;
+    if( $this_action eq 'update' ) {
+        $this_old = 'oldupd';
+        croak qq/$this_action not allowed: "$prevind"/
+            unless $prevind =~ /[\Q$create$update$delete\E]/;
     }
-
-    # get top toc
-    my $top_toc = $self->new_toc( { int => 0 } );
+    elsif( $this_action eq 'delete' ) {
+        $this_old = 'olddel';
+        croak qq/$this_action not allowed: "$prevind"/
+            unless $prevind =~ /[\Q$create$update\E]/;
+    }
+    else {
+        croak "Not recognized: $this_action";
+    }
 
     # get keyfile with keynum
     my( $keyfile, $keyfint ) = $self->keyfile( $keyint );
@@ -769,12 +756,12 @@ sub update_delete {
         unless $try eq $prevpreamble;
 
     # get datafnum from top toc
-    my $datafnum = $top_toc->datafnum;  # may be changed by datafile()
-    $datafnum = int2base $datafnum, $self->fnumbase, $self->fnumlen;
+    my $top_toc  = $self->new_toc( { int => 0 } );
+    my $datafnum = int2base $top_toc->datafnum, $self->fnumbase, $self->fnumlen;
 
     # get datafile with datafnum and reclen
-    my $reclen = length $$data_ref;
     my $datafile;
+    my $reclen               = length $$data_ref;
     ( $datafile, $datafnum ) = $self->datafile( $datafnum, $reclen );
     my $datafh               = $self->locked_for_write( $datafile );
     my $dataseek             = -s $datafile;  # seekpos into datafile
@@ -789,7 +776,7 @@ sub update_delete {
 
     # make new preamble
     my $preamble_parms = {
-        indicator =>   $this_crud,
+        indicator =>   $self->crud->{ $this_action },
         date      =>   now( $self->dateformat ),
         transnum  => 0+$transint,
         keynum    => 0+$keyint,
@@ -827,7 +814,7 @@ sub update_delete {
 
     # update the old preamble
     $prevpreamble = $self->update_preamble( $prevpreamble, {
-        indicator => $this_old,
+        indicator => $self->crud->{ $this_old },
         nextfnum  => $datafnum,
         nextseek  => $dataseek,
         } );
@@ -835,25 +822,25 @@ sub update_delete {
     my $prevdatafh   = $self->locked_for_write( $prevdatafile );
     $self->write_bytes( $prevdatafh, $prevseek, $prevpreamble );
 
-    # get toc with datafnum and update
+    # get toc with datafnum and update it
     my $toc = $self->new_toc( { num => $datafnum } );
 
-    # set in toc->new(): $toc->datafnum() $toc->tocfnum()
-    $toc->keyfnum(    $top_toc->keyfnum      );  # keep last nums going
-    $toc->keynum(     $top_toc->keynum       );
-    $toc->transnum(   $transint              );
-    $toc->$which(     $toc->$which()     + 1 );
-    $toc->$which_old( $toc->$which_old() + 1 );
+    # note, $toc->datafnum and $toc->tocfnum are set in toc->new
+    $toc->keyfnum(      $top_toc->keyfnum        );  # keep last nums going
+    $toc->keynum(       $top_toc->keynum         );
+    $toc->transnum(     $transint                );
+    $toc->$this_action( $toc->$this_action() + 1 );
+    $toc->$this_old(    $toc->$this_old()    + 1 );
 
     $toc->write_toc( $toc->datafnum );
 
     # update top toc
-
-    $top_toc->datafnum(   $toc->datafnum             );
-    $top_toc->tocfnum(    $toc->tocfnum              );
-    $top_toc->transnum(   $toc->transnum             );
-    $top_toc->$which(     $top_toc->$which()     + 1 );
-    $top_toc->$which_old( $top_toc->$which_old() + 1 );
+    $top_toc->datafnum(     $toc->datafnum               );
+    $top_toc->tocfnum(      $toc->tocfnum                );
+    $top_toc->transnum(     $toc->transnum               );
+    $top_toc->$this_action( $top_toc->$this_action() + 1 );
+    $top_toc->$this_old(    $top_toc->$this_old()    + 1 );
+    $top_toc->numrecs(      $top_toc->numrecs        - 1 ) if $this_action eq 'delete';
 
     $top_toc->write_toc( 0 );
 
@@ -992,6 +979,7 @@ if C<$value> is given.  Otherwise, they just return the value.
  $ds->fnumbase(    [$value] ); # base of stored file number
  $ds->dateformat(  [$value] ); # format from uri
  $ds->regx(        [$value] ); # capturing regx for preamble string
+ $ds->datamax(     [$value] ); # maximum bytes in a data file
  $ds->crud(        [$value] ); # hash ref, e.g.,
 
      {
@@ -1010,7 +998,6 @@ if C<$value> is given.  Otherwise, they just return the value.
  $ds->dirlev(  [$value] ); # number of directory levels
  $ds->tocmax(  [$value] ); # maximum toc entries
  $ds->keymax(  [$value] ); # maximum key entries
- $ds->datamax( [$value] ); # maximum bytes in a data file
 
 If no C<dirmax>, directories will keep being added to.
 
@@ -1022,9 +1009,6 @@ indefinitely.
 
 If no C<keymax>, there will be only one key file, which will grow
 indefinitely.
-
-If no C<datamax>, the length and number base of the seek position
-numbers will determine the maximum size for the data files.
 
 =cut
 
@@ -1056,12 +1040,30 @@ sub fnumbase    {for($_[0]->{fnumbase}    ){$_=$_[1]if@_>1;return$_}}
 sub dateformat  {for($_[0]->{dateformat}  ){$_=$_[1]if@_>1;return$_}}
 sub regx        {for($_[0]->{regx}        ){$_=$_[1]if@_>1;return$_}}
 sub crud        {for($_[0]->{crud}        ){$_=$_[1]if@_>1;return$_}}
-
-sub dirmax      {for($_[0]->{dirmax}      ){$_=$_[1]if@_>1;return$_}}
-sub dirlev      {for($_[0]->{dirlev}      ){$_=$_[1]if@_>1;return$_}}
-sub tocmax      {for($_[0]->{tocmax}      ){$_=$_[1]if@_>1;return$_}}
-sub keymax      {for($_[0]->{keymax}      ){$_=$_[1]if@_>1;return$_}}
 sub datamax     {for($_[0]->{datamax}     ){$_=$_[1]if@_>1;return$_}}
+
+# optional:
+
+sub dirmax {
+    my $self = shift;
+    return $self->{dirmax} = $_[0] if @_;
+    return $self->{dirmax} if exists $self->{dirmax};
+}
+sub dirlev {
+    my $self = shift;
+    return $self->{dirlev} = $_[0] if @_;
+    return $self->{dirlev} if exists $self->{dirlev};
+}
+sub tocmax {
+    my $self = shift;
+    return $self->{tocmax} = $_[0] if @_;
+    return $self->{tocmax} if exists $self->{tocmax};
+}
+sub keymax {
+    my $self = shift;
+    return $self->{keymax} = $_[0] if @_;
+    return $self->{keymax} if exists $self->{keymax};
+}
 
 #---------------------------------------------------------------------
 
@@ -1250,8 +1252,7 @@ Returns count of records whose indicators match regx, e.g.,
  $self->howmany( qr/delete/ );
  $self->howmany( qr/oldupd|olddel/ );
 
-If no regx, howmany() counts creates minus deletes (which should be
-the number of undeleted records in the datastore).
+If no regx, howmany() returns numrecs from the toc file.
 
 =cut
 
@@ -1259,16 +1260,12 @@ sub howmany {
     my( $self, $regx ) = @_;
 
     my $top_toc = $self->new_toc( { int => 0 } );
-    my $howmany = 0;
-    if( $regx ) {
-        for( qw( create update delete oldupd olddel ) ) {
-            $howmany += $top_toc->$_() if /$regx/;
-        }
-    }
-    else {
-        $howmany = $top_toc->create - $top_toc->delete;
-    }
 
+    return $top_toc->numrecs unless $regx;
+
+    my $howmany = 0;
+    for( qw( create update delete oldupd olddel ) ) {
+        $howmany += $top_toc->$_() if /$regx/ }
     return $howmany;
 }
 
@@ -1554,6 +1551,7 @@ sub write_file {
 #---------------------------------------------------------------------
 # new(), expects yyyymmdd or yymd (or mmddyyyy, mdyy, etc.)
 #        returns current date formatted as requested
+# called by create(), update(), delete()
 
 sub now {
     my( $format ) = @_;
@@ -1576,6 +1574,7 @@ sub now {
 
 #---------------------------------------------------------------------
 # then(), translates stored date to YYYY-MM-DD
+# called by FF::DD::Preamble::init()
 
 sub then {
     my( $self, $date, $format ) = @_;

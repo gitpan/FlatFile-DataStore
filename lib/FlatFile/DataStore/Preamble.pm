@@ -48,11 +48,11 @@ record.
 
 =head1 VERSION
 
-FlatFile::DataStore::Preamble version 0.05
+FlatFile::DataStore::Preamble version 0.06
 
 =cut
 
-our $VERSION = '0.05';
+our $VERSION = '0.06';
 
 use 5.008003;
 use strict;
@@ -81,7 +81,7 @@ my %Attrs = ( %Generated, qw(
     user      1
     ) );
 
-my $asc_chr = qr/^[ -~]+$/;
+my $Ascii_chars = qr/^[ -~]+$/;
 
 #---------------------------------------------------------------------
 
@@ -127,8 +127,6 @@ sub init {
 
     my $indicator = $parms->{'indicator'} || croak "Missing indicator";
 
-    # change, e.g., 'create' to '+'
-    for( $indicator ) { $_ = $crud->{ $_ } if exists $crud->{ $_ } }  # XXX probably remove
     $self->indicator( $indicator );
 
     my $string = "";
@@ -154,7 +152,7 @@ sub init {
             }
             elsif( /user/ ) {
                 croak qq'Missing value for "$_"' unless defined $value;
-                croak qq'Invalid value for "$_" ($value)' unless $value =~ $asc_chr;
+                croak qq'Invalid value for "$_" ($value)' unless $value =~ $Ascii_chars;
 
                 my $try = sprintf "%-${len}s", $value;  # pads with blanks
                 croak qq'Value of "$_" ($try) too long' if length $try > $len;
@@ -164,15 +162,15 @@ sub init {
             }
             elsif( not defined $value ) {
                 if( (/keynum|reclen|transnum|thisfnum|thisseek/              ) or
-                    (/prevfnum|prevseek/ and $indicator =~ /[$update$delete]/) or
-                    (/nextfnum|nextseek/ and $indicator =~ /[$oldupd$olddel]/) ) {
+                    (/prevfnum|prevseek/ and $indicator =~ /[\Q$update$delete\E]/) or
+                    (/nextfnum|nextseek/ and $indicator =~ /[\Q$oldupd$olddel\E]/) ) {
                     croak qq'Missing value for "$_"';
                 }
                 $string .= "-" x $len;  # string of '-' for null
             }
             else {
-                if( (/nextfnum|nextseek/ and $indicator =~ /[$update$delete]/) or
-                    (/prevfnum|prevseek/ and $indicator =~ /[$create]/       ) ) {
+                if( (/nextfnum|nextseek/ and $indicator =~ /[\Q$update$delete\E]/) or
+                    (/prevfnum|prevseek/ and $indicator =~ /[\Q$create\E]/       ) ) {
                     croak qq'Setting value of "$_" not permitted';
                 }
                 my $try = sprintf "%0${len}s", /fnum/? $value: int2base( $value, $parm );

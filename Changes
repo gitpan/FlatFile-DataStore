@@ -1,5 +1,10 @@
 Revision history for Perl extension FlatFile::DataStore.
 
+0.06 Tue Mar 17 22:53:43 EDT 2009
+    - added numrecs to toc file
+    - blocked delete if record already deleted
+0.05 Tue Mar 17 09:14:55 EDT 2009
+    - added prerequisites to Makefile.PL
 0.04 Mon Mar 16 23:43:04 EDT 2009
     - added Tutorial.pm and FMTEYEWTK.pm to MANIFEST
     - otherwise, no code changes from 0.02 below
