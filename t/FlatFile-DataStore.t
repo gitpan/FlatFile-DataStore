@@ -136,7 +136,9 @@ my $desc = "Example+FlatFile::DataStore";
     is( $thisseek, 0, "thisseek()" );
 
     my $record2 = $ds->retrieve( $keynum );
-    is( Dumper($record), Dumper($record2), "retrieve()" );
+    my $recdump1 = Dumper $record;
+    my $recdump2 = Dumper $record2;
+    is( $recdump1, $recdump2, "retrieve()" );
 
     my $updrec = $ds->update( $record, "Updated Record", "Updated1" );
 

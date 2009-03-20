@@ -1,5 +1,8 @@
 Revision history for Perl extension FlatFile::DataStore.
 
+0.08 Fri Mar 20 14:46:03 EDT 2009
+    - code remediation
+
 0.07 Tue Mar 17 23:40:25 EDT 2009
     - properly recorded oldupd/olddel in appropriate toc file
 

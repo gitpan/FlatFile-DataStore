@@ -48,11 +48,11 @@ record.
 
 =head1 VERSION
 
-FlatFile::DataStore::Preamble version 0.07
+FlatFile::DataStore::Preamble version 0.08
 
 =cut
 
-our $VERSION = '0.07';
+our $VERSION = '0.08';
 
 use 5.008003;
 use strict;
@@ -225,16 +225,17 @@ only use them for reading.
 sub string    {for($_[0]->{string}    ){$_=$_[1]if@_>1;return$_}}
 sub indicator {for($_[0]->{indicator} ){$_=$_[1]if@_>1;return$_}}
 sub date      {for($_[0]->{date}      ){$_=$_[1]if@_>1;return$_}}
-sub keynum    {for($_[0]->{keynum}    ){$_=$_[1]if@_>1;return$_}}
-sub reclen    {for($_[0]->{reclen}    ){$_=$_[1]if@_>1;return$_}}
-sub transnum  {for($_[0]->{transnum}  ){$_=$_[1]if@_>1;return$_}}
-sub thisfnum  {for($_[0]->{thisfnum}  ){$_=$_[1]if@_>1;return$_}}
-sub thisseek  {for($_[0]->{thisseek}  ){$_=$_[1]if@_>1;return$_}}
-sub prevfnum  {for($_[0]->{prevfnum}  ){$_=$_[1]if@_>1;return$_}}
-sub prevseek  {for($_[0]->{prevseek}  ){$_=$_[1]if@_>1;return$_}}
-sub nextfnum  {for($_[0]->{nextfnum}  ){$_=$_[1]if@_>1;return$_}}
-sub nextseek  {for($_[0]->{nextseek}  ){$_=$_[1]if@_>1;return$_}}
 sub user      {for($_[0]->{user}      ){$_=$_[1]if@_>1;return$_}}
+
+sub keynum    {for($_[0]->{keynum}    ){$_=0+$_[1]if@_>1;return$_}}
+sub reclen    {for($_[0]->{reclen}    ){$_=0+$_[1]if@_>1;return$_}}
+sub transnum  {for($_[0]->{transnum}  ){$_=0+$_[1]if@_>1;return$_}}
+sub thisfnum  {for($_[0]->{thisfnum}  ){$_=  $_[1]if@_>1;return$_}}
+sub thisseek  {for($_[0]->{thisseek}  ){$_=0+$_[1]if@_>1;return$_}}
+sub prevfnum  {for($_[0]->{prevfnum}  ){$_=  $_[1]if@_>1;return$_}}
+sub prevseek  {for($_[0]->{prevseek}  ){$_=0+$_[1]if@_>1;return$_}}
+sub nextfnum  {for($_[0]->{nextfnum}  ){$_=  $_[1]if@_>1;return$_}}
+sub nextseek  {for($_[0]->{nextseek}  ){$_=0+$_[1]if@_>1;return$_}}
 
 __END__
 

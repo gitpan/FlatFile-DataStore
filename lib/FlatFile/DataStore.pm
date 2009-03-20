@@ -61,24 +61,19 @@ Methods support the following actions:
  - update
  - delete
  - history
- - iterate (over all transactions in the data files) (TODO)
 
 Scripts supplied in the distribution perform:
 
- - validation of a data store
- - migration of data store records to newly configured data store
- - comparison of pre-migration and post-migration data stores
-
-There is more general discussion and tutorials about this module
-in FlatFile::DataStore::Tutorial.
+ - validation
+ - migration
 
 =head1 VERSION
 
-FlatFile::DataStore version 0.07
+FlatFile::DataStore version 0.08
 
 =cut
 
-our $VERSION = '0.07';
+our $VERSION = '0.08';
 
 use 5.008003;
 use strict;
@@ -218,21 +213,29 @@ sub init {
             $self->$attr( $uri_parms->{ $attr } );
         }
 
-        # now for some generated attributes
+        # check that all fnums and seeks are the same
+        croak qq/fnum parameters differ/
+            unless $self->thisfnum eq $self->prevfnum and
+                   $self->thisfnum eq $self->nextfnum;
+        croak qq/seek parameters differ/
+            unless $self->thisseek eq $self->prevseek and
+                   $self->thisseek eq $self->nextseek;
+
+        # now for some generated attributes ...
         my( $len, $base );
-        ( $len, $base ) = split /-/, $self->thisfnum;
-        $self->fnumlen(     0+$len                        );
-        $self->fnumbase(      $base                       );
+        ( $len, $base ) = split /-/, $self->thisfnum;  # fnums are equal
+        $self->fnumlen(    $len                        );
+        $self->fnumbase(   $base                       );
         ( $len, $base ) = split /-/, $self->transnum;
-        $self->translen(    0+$len                        );
-        $self->transbase(     $base                       );
+        $self->translen(   $len                        );
+        $self->transbase(  $base                       );
         ( $len, $base ) = split /-/, $self->keynum;
-        $self->keylen(      0+$len                        );
-        $self->keybase(       $base                       );
-        $self->dateformat(    (split /-/, $self->date)[1] );
-        $self->regx(          $self->make_preamble_regx   );
-        $self->crud(          $self->make_crud            );
-        $self->dir(           $dir                        );  # dir not in uri
+        $self->keylen(     $len                        );
+        $self->keybase(    $base                       );
+        $self->dateformat( (split /-/, $self->date)[1] );
+        $self->regx(       $self->make_preamble_regx   );
+        $self->crud(       $self->make_crud            );
+        $self->dir(        $dir                        );  # dir not in uri
 
         $self->toclen( 10          +  # blanks
             3 *    $self->fnumlen  +  # datafnum, tocfnum, keyfnum
@@ -240,13 +243,16 @@ sub init {
             6 *    $self->translen +  # transnum and cruds
             length $self->recsep );
 
+        ( $len, $base ) = split /-/, $self->thisseek;  # seeks are equal
+        my $maxnum = substr( base_chars( $base ), -1) x $len;
+        my $maxint = base2int $maxnum, $base;
+
         if( $self->datamax ) {
             $self->datamax( $self->convert_datamax );
+            croak qq/datamax too large/ if $self->datamax > $maxint;
         }
         else {
-            ( $len, $base ) = split /-/, $self->thisseek;  # check all seeks equal
-            my $maxnum = (split //, base_chars $base)[-1] x $len;
-            $self->datamax( base2int $maxnum, $base );
+            $self->datamax( $maxint );
         }
 
         if( $self->dirmax ) {
@@ -315,27 +321,18 @@ sub make_preamble_regx {
         my( $pos, $len, $parm ) = @$aref;
 
         for( $key ) {
-
-            # note: user regx must allow only /[ -~]/ (printable ascii)
-            # not checked for here (here we just use user-supplied regx),
-            # but checked for /[ -~]/ other places
             if( /indicator/ ) {
                 $regx .= ($len == 1 ? "([\Q$parm\E])" : "([\Q$parm\E]{$len})");
             }
-            elsif( /user/ ) {
+            elsif( /user/ ) {  # should only allow $Ascii_chars
                 $regx .= ($len == 1 ? "([$parm])" : "([$parm]{$len})");
             }
-
-            # XXX want better match pattern for date, is there one?
-            # as is: 8 decimal digits or 4 base62 digits
             elsif( /date/ ) {
                 $regx .= ($len == 8 ? "([0-9]{8})" : "([0-9A-Za-z]{4})");
             }
-
-            # here we get the base characters and compress into ranges
             else {
                 my $chars = base_chars( $parm );
-                $chars =~ s/([0-9])[0-9]+([0-9])/$1-$2/;
+                $chars =~ s/([0-9])[0-9]+([0-9])/$1-$2/;  # compress
                 $chars =~ s/([A-Z])[A-Z]+([A-Z])/$1-$2/;
                 $chars =~ s/([a-z])[a-z]+([a-z])/$1-$2/;
                 # '-' is 'null' character:
@@ -343,7 +340,7 @@ sub make_preamble_regx {
             }
         }
     }
-    return qr($regx);
+    return qr/$regx/;
 }
 
 #---------------------------------------------------------------------
@@ -361,14 +358,12 @@ sub make_crud {
     my( $self ) = @_;
 
     my( $len, $chars ) = split /-/, $self->indicator, 2;
-    croak qq/Only single-character indicators supported/
-        if $len != 1;
+    croak qq/Only single-character indicators supported./ if $len != 1;
 
     my @c = split //, $chars;
     my %c = map { $_ => 1 } @c;
     my @n = keys %c;
-    croak qq/Need five unique indicator characters/
-        if @n != 5 or @c != 5;
+    croak qq/Need five unique indicator characters/ if @n != 5 or @c != 5;
 
     my %crud;
     @crud{ qw( create oldupd update olddel delete ) } = @c;
@@ -384,10 +379,7 @@ sub convert_datamax {
     my( $self ) = @_;
 
     # ignoring M/G ambiguities and using round numbers:
-    my %sizes = (
-        M => 10**6,
-        G => 10**9,
-        );
+    my %sizes = ( M => 10**6, G => 10**9 );
 
     my $max = $self->datamax;
     $max =~ s/_//g;
@@ -419,132 +411,91 @@ Returns a Flatfile::DataStore::Record object.
 Note: the record data (but not user data) is stored in the FF::DS::Record
 object as a scalar reference.  This is done for efficiency in the cases
 where the record data may be very large.  Likewise, the first parm to
-create() is allowed to be a scalar reference for the same reason.
+create() is allowed to be a scalar reference.
 
 =cut
 
 sub create {
     my( $self, $record_data, $user_data ) = @_;
 
-    # get rec data from parms
-    # get user data from parms
-    # study parms for alternative calling schemes
     my $data_ref;
-    if( my $reftype = ref $record_data ) {
-        for( $reftype ) {
-            if( /SCALAR/ ) {
-                $data_ref = $record_data;
-            }
-            elsif( /FlatFile::DataStore::Record/ ) {
-                $data_ref = $record_data->data;    
-                $user_data = $record_data->user
-                    unless defined $user_data;
-            }
-            else {
-                croak qq/Unrecognized ref type: $reftype/;
-            }
-        }
+    if( defined $record_data ) {
+        my $reftype = ref $record_data;
+        unless( $reftype ) {  # string
+            $data_ref = \$record_data; }
+        elsif( $reftype eq "SCALAR" ) {
+            $data_ref = $record_data; }
+        elsif( $reftype =~ /Record/ ) {
+            $data_ref = $record_data->data;
+            $user_data = $record_data->user unless defined $user_data; }
+        else {
+            croak qq/Unrecognized: $reftype/; }
     }
-    else {
-        $data_ref = \$record_data;
-    }
+    croak qq/No record data./ unless $data_ref;
 
-    # get reclen from rec data
-    my $reclen = length $$data_ref;
-
-    # get top toc
+    # get next keynum
     my $top_toc = $self->new_toc( { int => 0 } );
-
-    # get next keynum with top toc
-    my $keyint = $top_toc->keynum + 1;
+    my $keyint  = $top_toc->keynum + 1;
     my $keylen  = $self->keylen;
     my $keybase = $self->keybase;
-    my $keynum = int2base $keyint, $keybase, $keylen;
+    my $keynum  = int2base $keyint, $keybase, $keylen;
     croak qq/Database exceeds configured size (keynum: "$keynum" too long)/
         if length $keynum > $keylen;
 
-    # get keyfile with keynum
-    my ( $keyfile, $keyfint ) = $self->keyfile( $keyint );
-
-    # need to lock files before checking sizes
+    # get keyfile
+    # need to lock files before getting seek positions
     # want to lock keyfile before datafile
-    my $keyfh = $self->locked_for_write( $keyfile );
-    my $keyseek = -s $keyfile;  # seekpos into keyfile
+    my( $keyfile, $keyfint ) = $self->keyfile( $keyint );
+    my $keyfh                = $self->locked_for_write( $keyfile );
+    my $keyseek              = -s $keyfile;  # seekpos into keyfile
 
-    # get datafnum from top toc
+    # get datafile ($datafnum may increment)
     my $datafnum = $top_toc->datafnum || 1;  # (||1 only in create)
-    $datafnum = int2base $datafnum, $self->fnumbase, $self->fnumlen;
+    $datafnum    = int2base $datafnum, $self->fnumbase, $self->fnumlen;
+    my $reclen   = length $$data_ref;
 
-    # get datafile with datafnum and reclen
     my $datafile;
     ( $datafile, $datafnum ) = $self->datafile( $datafnum, $reclen );
     my $datafh               = $self->locked_for_write( $datafile );
     my $dataseek             = -s $datafile;  # seekpos into datafile
 
-    # get next transnum with top toc
-    my $transint  = $top_toc->transnum + 1;
-    my $translen  = $self->translen;
-    my $transbase = $self->transbase;
-    my $transnum = int2base $transint, $transbase, $translen;
-    croak qq/Database exceeds configured size (transnum: "$transnum" too long)/
-        if length $transnum > $translen;
+    # get next transaction number
+    my $transint = $self->nexttransnum( $top_toc );
 
-    # create a record
-    my $preamble_parms = {
-        indicator =>   $self->crud->{'create'},
-        date      =>   now( $self->dateformat ),
-        transnum  => 0+$transint,
-        keynum    => 0+$keyint,
-        reclen    => 0+$reclen,
-        thisfnum  =>   $datafnum,
-        thisseek  => 0+$dataseek,
-        };
-    $preamble_parms->{ user } = $user_data
-        if defined $user_data;
-
+    # make new record
     my $record = $self->new_record( {
-        preamble => $preamble_parms,
         data     => $data_ref,
-        } );
+        preamble => {
+            indicator => $self->crud->{'create'},
+            date      => now( $self->dateformat ),
+            transnum  => $transint,
+            keynum    => $keyint,
+            reclen    => $reclen,
+            thisfnum  => $datafnum,
+            thisseek  => $dataseek,
+            user      => $user_data,
+            } } );
 
     # write record to datafile
     my $preamble = $record->string;
-    my $recsep   = $self->recsep;
-    my $dataline = "$preamble$$data_ref$recsep";
-
-    seek $datafh, $dataseek, 0;
-    print $datafh $dataline or croak "Can't write $datafile: $!";
-    my $datatell = tell $datafh;
-
-    # "belt and suspenders" ...
-    if( $dataseek + length $dataline ne $datatell ) {
-        croak "Bad write?: $datafile: things don't add up";
-    }
+    my $dataline = $preamble . $$data_ref . $self->recsep;
+    $self->write_bytes( $datafh, $dataseek, $dataline );
 
     # write preamble to keyfile
-    my $keyline = "$preamble$recsep";
-    seek $keyfh, $keyseek, 0;
-    print $keyfh $keyline or croak "Can't write $keyfile: $!";
-    my $keytell = tell $keyfh;
-
-    if( $keyseek + length $keyline ne $keytell ) {
-        croak "Bad write?: $keyfile: things don't add up";
-    }
+    $self->write_bytes( $keyfh, $keyseek, $preamble . $self->recsep );
     
-    # get toc with datafnum and update
-    # ... datafnum and tocfnum set in new()
+    # update table of contents (toc) file
     my $toc = $self->new_toc( { num => $datafnum } );
 
+    # note: datafnum and tocfnum are set in toc->new
     $toc->keyfnum(   $keyfint          );
     $toc->keynum(    $keyint           );
     $toc->transnum(  $transint         );
     $toc->create(    $toc->create  + 1 );
     $toc->numrecs(   $toc->numrecs + 1 );
-
-    $toc->write_toc( $toc->datafnum );
+    $toc->write_toc( $toc->datafnum    );
 
     # update top toc
-
     $top_toc->datafnum( $toc->datafnum        );
     $top_toc->keyfnum(  $toc->keyfnum         );
     $top_toc->tocfnum(  $toc->tocfnum         );
@@ -576,8 +527,6 @@ Returns a Flatfile::DataStore::Record object.
 sub retrieve {
     my( $self, $num, $pos ) = @_;
 
-    my $preamblelen = $self->preamblelen;
-
     my $fnum;
     my $seekpos;
     my $keystring;
@@ -595,8 +544,7 @@ sub retrieve {
         my $keyfh   = $self->locked_for_read( $keyfile );
 
         my $trynum  = $self->lastkeynum;
-        croak qq/Record doesn't exist: "$keynum"/
-            if $keynum > $trynum;
+        croak qq/Record doesn't exist: "$keynum"/ if $keynum > $trynum;
 
         $keystring = $self->read_preamble( $keyfh, $keyseek );
         my $parms  = $self->burst_preamble( $keystring );
@@ -607,21 +555,12 @@ sub retrieve {
 
     my $datafile = $self->which_datafile( $fnum );
     my $datafh   = $self->locked_for_read( $datafile );
-    my $string   = $self->read_preamble( $datafh, $seekpos );
+    my $record   = $self->read_record( $datafh, $seekpos );
 
-    croak qq/Mismatch [$string] [$keystring]/
-        if $keystring and $string ne $keystring;
-
-    my $preamble = $self->new_preamble( { string => $string } );
-
-    $seekpos   += $preamblelen;
-    my $reclen  = $preamble->reclen;
-    my $recdata = $self->read_bytes( $datafh, $seekpos, $reclen ); 
-
-    my $record = $self->new_record( {
-        preamble => $preamble,
-        data     => \$recdata,
-        } );
+    if( $keystring ) {
+        my $string = $record->string;
+        croak qq/Mismatch "$string" vs. "$keystring"/ if $string ne $keystring;
+    }
 
     return $record;
 }
@@ -653,7 +592,6 @@ sub update {
     my $prevind      = $obj->indicator;
     my $prevfnum     = $obj->thisfnum;
     my $prevseek     = $obj->thisseek;
-    my $prevuser     = $obj->user;
 
     # update is okay for these:
     my $create = $self->crud->{'create'};
@@ -673,7 +611,7 @@ sub update {
     my $try = $self->read_preamble( $keyfh, $keyseek );
     croak qq/Mismatch [$try] [$prevpreamble]/ unless $try eq $prevpreamble;
 
-    # get datafile (datafnum might increment)
+    # get datafile ($datafnum may increment)
     my $top_toc  = $self->new_toc( { int => 0 } );
     my $datafnum = int2base $top_toc->datafnum, $self->fnumbase, $self->fnumlen;
     my $reclen   = length $$data_ref;
@@ -684,42 +622,33 @@ sub update {
     my $dataseek             = -s $datafile;  # seekpos into datafile
 
     # get next transaction number
-    my $transint  = $top_toc->transnum + 1;
-    my $translen  = $self->translen;
-    my $transbase = $self->transbase;
-    my $transnum = int2base $transint, $transbase, $translen;
-    croak qq/Database exceeds configured size (transnum: "$transnum" too long)/
-        if length $transnum > $translen;
+    my $transint = $self->nexttransnum( $top_toc );
 
     # make new record
     my $record = $self->new_record( {
         data     => $data_ref,
         preamble => {
-            indicator =>   $self->crud->{'update'},
-            date      =>   now( $self->dateformat ),
-            transnum  => 0+$transint,
-            keynum    => 0+$keyint,
-            reclen    => 0+$reclen,
-            thisfnum  =>   $datafnum,
-            thisseek  => 0+$dataseek,
-            prevfnum  =>   $prevfnum,
-            prevseek  => 0+$prevseek,
-            user      =>   $user_data,
+            indicator => $self->crud->{'update'},
+            date      => now( $self->dateformat ),
+            transnum  => $transint,
+            keynum    => $keyint,
+            reclen    => $reclen,
+            thisfnum  => $datafnum,
+            thisseek  => $dataseek,
+            prevfnum  => $prevfnum,
+            prevseek  => $prevseek,
+            user      => $user_data,
             } } );
 
     # write record to datafile
     my $preamble = $record->string;
     my $dataline = $preamble . $$data_ref . $self->recsep;
     $self->write_bytes( $datafh, $dataseek, $dataline );
-    my $datatell = tell $datafh;
-
-    croak qq/Bad write?: $datafile: things don't add up/
-        if $dataseek + length $dataline ne $datatell;
 
     # write preamble to keyfile (recsep there already)
     $self->write_bytes( $keyfh, $keyseek, $preamble );
 
-    # update the old preamble in prev datafile
+    # update the old preamble
     $prevpreamble = $self->update_preamble( $prevpreamble, {
         indicator => $self->crud->{ 'oldupd' },
         nextfnum  => $datafnum,
@@ -754,14 +683,12 @@ sub update {
     $toc->write_toc( $toc->datafnum );
 
     # update top toc
-    $top_toc->datafnum( $toc->datafnum       );
-    $top_toc->tocfnum(  $toc->tocfnum        );
-    $top_toc->transnum( $toc->transnum       );
-    $top_toc->update(   $top_toc->update + 1 );
-    $top_toc->oldupd(   $top_toc->oldupd + 1 );
-
-    # if recovering a deleted record
-    $top_toc->numrecs( $top_toc->numrecs + 1 ) if $prevind eq $delete;
+    $top_toc->datafnum( $toc->datafnum        );
+    $top_toc->tocfnum(  $toc->tocfnum         );
+    $top_toc->transnum( $toc->transnum        );
+    $top_toc->update(   $top_toc->update  + 1 );
+    $top_toc->oldupd(   $top_toc->oldupd  + 1 );
+    $top_toc->numrecs(  $top_toc->numrecs + 1 ) if $prevind eq $delete;
 
     $top_toc->write_toc( 0 );
 
@@ -795,12 +722,10 @@ sub delete {
     my $prevind      = $obj->indicator;
     my $prevfnum     = $obj->thisfnum;
     my $prevseek     = $obj->thisseek;
-    my $prevuser     = $obj->user;
 
-    # check if this action is allowed
+    # delete is okay for these:
     my $create = $self->crud->{'create'};
     my $update = $self->crud->{'update'};
-    my $delete = $self->crud->{'delete'};
 
     croak qq/'delete' not allowed: "$prevind"/
         unless $prevind =~ /[\Q$create$update\E]/;
@@ -815,7 +740,7 @@ sub delete {
     my $try = $self->read_preamble( $keyfh, $keyseek );
     croak qq/Mismatch [$try] [$prevpreamble]/ unless $try eq $prevpreamble;
 
-    # get datafile
+    # get datafile ($datafnum may increment)
     my $top_toc  = $self->new_toc( { int => 0 } );
     my $datafnum = int2base $top_toc->datafnum, $self->fnumbase, $self->fnumlen;
     my $reclen   = length $$data_ref;
@@ -826,37 +751,28 @@ sub delete {
     my $dataseek             = -s $datafile;  # seekpos into datafile
 
     # get next transaction number
-    my $transint  = $top_toc->transnum + 1;
-    my $translen  = $self->translen;
-    my $transbase = $self->transbase;
-    my $transnum  = int2base $transint, $transbase, $translen;
-    croak qq/Database exceeds configured size (transnum: "$transnum" too long)/
-        if length $transnum > $translen;
+    my $transint = $self->nexttransnum( $top_toc );
 
     # make new record
     my $record = $self->new_record( {
-        data      => $data_ref,
-        preamble  => {
-            indicator =>   $self->crud->{ 'delete' },
-            date      =>   now( $self->dateformat ),
-            transnum  => 0+$transint,
-            keynum    => 0+$keyint,
-            reclen    => 0+$reclen,
-            thisfnum  =>   $datafnum,
-            thisseek  => 0+$dataseek,
-            prevfnum  =>   $prevfnum,
-            prevseek  => 0+$prevseek,
-            user      =>   $user_data,
+        data     => $data_ref,
+        preamble => {
+            indicator => $self->crud->{'delete'},
+            date      => now( $self->dateformat ),
+            transnum  => $transint,
+            keynum    => $keyint,
+            reclen    => $reclen,
+            thisfnum  => $datafnum,
+            thisseek  => $dataseek,
+            prevfnum  => $prevfnum,
+            prevseek  => $prevseek,
+            user      => $user_data,
             } } );
 
     # write record to datafile
     my $preamble = $record->string;
     my $dataline = $preamble . $$data_ref . $self->recsep;
     $self->write_bytes( $datafh, $dataseek, $dataline );
-    my $datatell = tell $datafh;
-
-    croak qq/Bad write?: $datafile: things don't add up/
-        if $dataseek + length $dataline ne $datatell;
 
     # write preamble to keyfile (recsep there already)
     $self->write_bytes( $keyfh, $keyseek, $preamble );
@@ -874,7 +790,7 @@ sub delete {
     # update table of contents (toc) file
     my $toc = $self->new_toc( { num => $datafnum } );
 
-    # note, $toc->datafnum and $toc->tocfnum are set in toc->new
+    # note: datafnum and tocfnum are set in toc->new
     $toc->keyfnum(  $top_toc->keyfnum );  # keep last nums going
     $toc->keynum(   $top_toc->keynum  );
     $toc->transnum( $transint         );
@@ -1137,39 +1053,40 @@ sub name        {for($_[0]->{name}        ){$_=$_[1]if@_>1;return$_}}
 sub desc        {for($_[0]->{desc}        ){$_=$_[1]if@_>1;return$_}}
 sub recsep      {for($_[0]->{recsep}      ){$_=$_[1]if@_>1;return$_}}
 sub uri         {for($_[0]->{uri}         ){$_=$_[1]if@_>1;return$_}}
-sub preamblelen {for($_[0]->{preamblelen} ){$_=$_[1]if@_>1;return$_}}
-sub toclen      {for($_[0]->{toclen}      ){$_=$_[1]if@_>1;return$_}}
-sub keylen      {for($_[0]->{keylen}      ){$_=$_[1]if@_>1;return$_}}
-sub keybase     {for($_[0]->{keybase}     ){$_=$_[1]if@_>1;return$_}}
-sub translen    {for($_[0]->{translen}    ){$_=$_[1]if@_>1;return$_}}
-sub transbase   {for($_[0]->{transbase}   ){$_=$_[1]if@_>1;return$_}}
-sub fnumlen     {for($_[0]->{fnumlen}     ){$_=$_[1]if@_>1;return$_}}
-sub fnumbase    {for($_[0]->{fnumbase}    ){$_=$_[1]if@_>1;return$_}}
 sub dateformat  {for($_[0]->{dateformat}  ){$_=$_[1]if@_>1;return$_}}
 sub regx        {for($_[0]->{regx}        ){$_=$_[1]if@_>1;return$_}}
 sub crud        {for($_[0]->{crud}        ){$_=$_[1]if@_>1;return$_}}
 sub datamax     {for($_[0]->{datamax}     ){$_=$_[1]if@_>1;return$_}}
 
+sub preamblelen {for($_[0]->{preamblelen} ){$_=0+$_[1]if@_>1;return$_}}
+sub toclen      {for($_[0]->{toclen}      ){$_=0+$_[1]if@_>1;return$_}}
+sub keylen      {for($_[0]->{keylen}      ){$_=0+$_[1]if@_>1;return$_}}
+sub keybase     {for($_[0]->{keybase}     ){$_=0+$_[1]if@_>1;return$_}}
+sub translen    {for($_[0]->{translen}    ){$_=0+$_[1]if@_>1;return$_}}
+sub transbase   {for($_[0]->{transbase}   ){$_=0+$_[1]if@_>1;return$_}}
+sub fnumlen     {for($_[0]->{fnumlen}     ){$_=0+$_[1]if@_>1;return$_}}
+sub fnumbase    {for($_[0]->{fnumbase}    ){$_=0+$_[1]if@_>1;return$_}}
+
 # optional:
 
 sub dirmax {
     my $self = shift;
-    return $self->{dirmax} = $_[0] if @_;
+    return $self->{dirmax} = 0+$_[0] if @_;
     return $self->{dirmax} if exists $self->{dirmax};
 }
 sub dirlev {
     my $self = shift;
-    return $self->{dirlev} = $_[0] if @_;
+    return $self->{dirlev} = 0+$_[0] if @_;
     return $self->{dirlev} if exists $self->{dirlev};
 }
 sub tocmax {
     my $self = shift;
-    return $self->{tocmax} = $_[0] if @_;
+    return $self->{tocmax} = 0+$_[0] if @_;
     return $self->{tocmax} if exists $self->{tocmax};
 }
 sub keymax {
     my $self = shift;
-    return $self->{keymax} = $_[0] if @_;
+    return $self->{keymax} = 0+$_[0] if @_;
     return $self->{keymax} if exists $self->{keymax};
 }
 
@@ -1379,19 +1296,7 @@ sub howmany {
 }
 
 #---------------------------------------------------------------------
-# keyseek(), called various places to seek to a particular line in the
-# key file ... seekpos if keymax, e.g., keymax=3, keyint=7, keylen=4
-#
-# 1: 0   xxxx     skip    = int( keyint / keymax )
-#    1   xxxx             = int(   7    /   3    )
-#    2   xxxx             = 2 (files to skip)
-# 2: 3   xxxx     seekpos = keylen * ( keyint - ( skip * keymax ) )
-#    4   xxxx             =   4    * (   7    - (  2   *   3    ) )
-#    5   xxxx             =   4    * (   7    -        6          )
-# 3: 6   xxxx             =   4    *          1
-#    7 =>xxxx             = 4
-#    8   xxxx     '=>' marks seekpos 4 in file 3
-#
+# keyseek(), seek to a particular line in the key file
             
 sub keyseek {
     my( $self, $keyint ) = @_;
@@ -1410,6 +1315,7 @@ sub keyseek {
 
 #---------------------------------------------------------------------
 # lastkeynum(), called by retrieve to check if requested number exists
+
 sub lastkeynum {
     my( $self ) = @_;
 
@@ -1420,7 +1326,26 @@ sub lastkeynum {
 }
 
 #---------------------------------------------------------------------
+# nexttransnum, get next transaction number
+
+sub nexttransnum {
+    my( $self, $top_toc ) = @_;
+
+    $top_toc ||= $self->new_toc( { int => 0 } );
+
+    my $transint  = $top_toc->transnum + 1;
+    my $translen  = $self->translen;
+    my $transbase = $self->transbase;
+    my $transnum  = int2base $transint, $transbase, $translen;
+    croak qq/Database exceeds configured size (transnum: "$transnum" too long)/
+        if length $transnum > $translen;
+
+    return $transint;
+}
+
+#---------------------------------------------------------------------
 # sub all_datafiles(), called in migrate_validate utility script
+
 sub all_datafiles {
     my( $self ) = @_;
 
@@ -1597,11 +1522,7 @@ sub read_preamble {
 
     my $len = $self->preamblelen;
 
-    my $string;
-    sysseek $fh, $seekpos, 0   or croak "Can't seek: $!";
-    sysread $fh, $string, $len or croak "Can't read: $!";
-
-    return $string;
+    return $self->read_bytes( $fh, $seekpos, $len ); 
 }
 
 #---------------------------------------------------------------------
@@ -1623,7 +1544,6 @@ sub write_bytes {
     sysseek  $fh, $seekpos, 0 or croak "Can't seek: $!";
     syswrite $fh, $string     or croak "Can't write: $!";
 
-    return $string;
 }
 
 #---------------------------------------------------------------------
@@ -1652,10 +1572,6 @@ sub write_file {
     }
     else { print $fh $contents }
 }
-
-#---------------------------------------------------------------------
-# utilities (XXX will probably move to individual modules)
-#---------------------------------------------------------------------
 
 #---------------------------------------------------------------------
 # new(), expects yyyymmdd or yymd (or mmddyyyy, mdyy, etc.)
@@ -1707,74 +1623,6 @@ sub then {
     return "$y-$m-$d";
 }
 
-#---------------------------------------------------------------------
-# setbit(), 3 parms: bit vector, number, 0|1; changes vector
-#           e.g., set_bit( $vec, 20 );
-sub setbit { vec( $_[0], $_[1], 1 ) = $_[2] }
-
-#---------------------------------------------------------------------
-# bit2str(), 1 parm: bit vector; returns string of [01]+
-#            e.g., $str = bit2str( $vec );
-sub bit2str { unpack "b*", $_[0] }
-
-#---------------------------------------------------------------------
-# str2bit(), 1 parm: string of [01]+; returns bit vector
-#            e.g., $vec = str2bit( $str );
-sub str2bit { pack "b*", $_[0] }
-
-#---------------------------------------------------------------------
-# num2bit(), 1 parm: ref to array of integers; returns bit vector
-#            e.g., $vec = num2bit( \@a );
-sub num2bit {
-    my $bvec = "";
-    foreach my $num ( @{$_[0]} ) { vec( $bvec, $num, 1 ) = 1 }
-    $bvec;  # returned
-}
-
-#---------------------------------------------------------------------
-# bitcount(), 2 parm: bit vector, 0|1; returns number where bit==0|1
-#             e.g., $one_count  = bitcount( $vec, 1 )
-#             e.g., $zero_count = bitcount( $vec, 0 )
-sub bitcount {
-    my( $bvec, $bitval ) = @_;
-
-    my $setbits = unpack "%32b*", $bvec;
-    return $setbits if $bitval;
-    return 8 * length($bvec) - $setbits;
-
-}
-
-#---------------------------------------------------------------------
-# bit2num(), 1 parm: bit vector; returns aref of numbers where bit==1
-#            e.g., @a = bit2num( $vec );
-sub bit2num {
-    my( $v, $beg, $cnt ) = @_;
-    my @num;
-    my $count;
-
-    if( $beg ) {
-        if( $cnt ) {
-            my $end = $beg + $cnt - 1;
-            for( my $i = 0; $i < 8 * length $v; ++$i ) {
-                if( vec $v, $i, 1 and ++$count >= $beg and $count <= $end ) {
-                    push @num, $i } }
-        }
-        else {
-            for( my $i = 0; $i < 8 * length $v; ++$i ) {
-                if( vec $v, $i, 1 and ++$count >= $beg ) {
-                    push @num, $i } }
-        }
-    }
-
-    else {
-        for( my $i = 0; $i < 8 * length $v; ++$i ) {
-            push @num, $i if vec $v, $i, 1 }
-    }
-
-    \@num;  # returned
-
-}
-
 1;  # returned
 
 __END__
@@ -1789,12 +1637,10 @@ Until then (afterwards, too) please use with care.
 
 =head1 TODO
 
- - iteration function
+ - iteration
  - cgi to analyze data store configuation (for uri to point to)
  - more tests
  - more pod
- - split Tutorial.pm into Tutorial.pm and FMTEYEWTK.pm
- - make Tutorial.pm a real tutorial
 
 =head1 AUTHOR
 

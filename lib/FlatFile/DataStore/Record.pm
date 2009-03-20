@@ -47,11 +47,11 @@ likely call the accessors.
 
 =head1 VERSION
 
-FlatFile::DataStore::Record version 0.07
+FlatFile::DataStore::Record version 0.08
 
 =cut
 
-our $VERSION = '0.07';
+our $VERSION = '0.08';
 
 use 5.008003;
 use strict;

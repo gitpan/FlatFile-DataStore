@@ -11,6 +11,4 @@ lib/FlatFile/DataStore.pm
 lib/FlatFile/DataStore/Preamble.pm
 lib/FlatFile/DataStore/Record.pm
 lib/FlatFile/DataStore/Toc.pm
-lib/FlatFile/DataStore/Tutorial.pm
-lib/FlatFile/DataStore/FMTEYEWTK.pm
 META.yml                                 Module meta-data (added by MakeMaker)
