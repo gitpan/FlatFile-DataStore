@@ -30,11 +30,11 @@ any of it's methods yourself.
 
 =head1 VERSION
 
-FlatFile::DataStore::Toc version 0.08
+FlatFile::DataStore::Toc version 0.09
 
 =cut
 
-our $VERSION = '0.08';
+our $VERSION = '0.09';
 
 use 5.008003;
 use strict;

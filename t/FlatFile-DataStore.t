@@ -10,7 +10,8 @@ $Data::Dumper::Sortkeys = 1;
 
 BEGIN { use_ok('FlatFile::DataStore') };
 
-my $dir  = tempdir( CLEANUP => 1 );
+my $dir  = tempdir( CLEANUP => 1, EXLOCK => 0 );
+
 my $name = "example";
 my $desc = "Example+FlatFile::DataStore";
 

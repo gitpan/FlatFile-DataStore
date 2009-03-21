@@ -8,7 +8,7 @@ BEGIN { use_ok('FlatFile::DataStore::Toc') };
 
 # datastore set up
 use FlatFile::DataStore;
-my $dir  = tempdir( CLEANUP => 1 );
+my $dir  = tempdir( CLEANUP => 1, EXLOCK => 0 );
 my $name = "example";
 my $desc = "Example+FlatFile::DataStore";
 my $uri  = join ";",
