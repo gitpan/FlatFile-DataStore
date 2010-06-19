@@ -2,7 +2,6 @@ Changes
 Makefile.PL
 MANIFEST
 README
-tempdir/
 utils/migrate_validate
 utils/flatfile-datastore.cgi
 t/001-datastore.t

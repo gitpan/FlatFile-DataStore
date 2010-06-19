@@ -108,11 +108,11 @@ saves you from having to do something like this equivalent code:
  
 =head1 VERSION
 
-FlatFile::DataStore::Tiehash version 0.12
+FlatFile::DataStore::Tiehash version 0.13
 
 =cut
 
-our $VERSION = '0.12';
+our $VERSION = '0.13';
 
 use 5.008003;
 use strict;
