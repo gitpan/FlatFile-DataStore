@@ -1,5 +1,8 @@
 Revision history for Perl extension FlatFile::DataStore.
 
+0.12 Sat Jun 19 07:06:00 EDT 2010
+    - added missing tempdir for tests
+
 0.11 Thu May  6 16:25:05 EDT 2010
     - added tests, pod
     - fixed bugs, added features

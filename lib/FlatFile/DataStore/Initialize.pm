@@ -22,11 +22,11 @@ FlatFile::DataStore class.
 
 =head1 VERSION
 
-FlatFile::DataStore::Initialize version 0.11
+FlatFile::DataStore::Initialize version 0.12
 
 =cut
 
-our $VERSION = '0.11';
+our $VERSION = '0.12';
 
 use 5.008003;
 use strict;

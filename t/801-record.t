@@ -23,7 +23,12 @@ sub delete_tempfiles {
 }
 
 my $dir;
-BEGIN { $dir = "./tempdir"       }
+BEGIN {
+    $dir  = "./tempdir";
+    unless( -e $dir ) {
+        mkdir $dir or die "Can't mkdir $dir: $!";
+    }
+}
 NOW:  { delete_tempfiles( $dir ) }
 END   { delete_tempfiles( $dir ) }
 
