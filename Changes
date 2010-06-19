@@ -1,5 +1,11 @@
 Revision history for Perl extension FlatFile::DataStore.
 
+0.11 Thu May  6 16:25:05 EDT 2010
+    - added tests, pod
+    - fixed bugs, added features
+    - added Initialize, Tiehash, Utils
+    - added utils/migrate_validate and utils/flatfile-datastore.cgi
+
 0.10 Sun Mar 22 07:54:06 EDT 2009
     - temporarily removed tests
 

@@ -14,7 +14,9 @@ file data store record class.
  use FlatFile::DataStore::Preamble;
 
  my $preamble = FlatFile::DataStore::Preamble->new( {
+     datastore => $ds,         # FlatFile::DataStore object
      indicator => $indicator,  # single-character crud flag
+     transind  => $transind,   # single-character crud flag
      date      => $date,       # pre-formatted date
      transnum  => $transint,   # transaction number (integer)
      keynum    => $keynum,     # record sequence number (integer)
@@ -47,11 +49,11 @@ likely call the accessors.
 
 =head1 VERSION
 
-FlatFile::DataStore::Record version 0.10
+FlatFile::DataStore::Record version 0.11
 
 =cut
 
-our $VERSION = '0.10';
+our $VERSION = '0.11';
 
 use 5.008003;
 use strict;
@@ -78,12 +80,9 @@ populate the record string.  Two keys are recognized:
  - preamble, i.e., a FlatFile::DataStore::Preamble object
  - data,     the actual record data
 
-The record data is stored as a scalar reference.
+The record data is stored in the object as a scalar reference.
 
 =cut
-
-# XXX allow new() to accept the parms for FF::DS::Preamble->new()
-# XXX analyze situations where storing the scalar reference is a problem
 
 sub new {
     my( $class, $parms ) = @_;
@@ -119,18 +118,26 @@ sub init {
 
 #---------------------------------------------------------------------
 
-=head1 OBJECT METHODS: ACCESSORS
+=head1 OBJECT METHODS: Accessors
 
 The following read/write methods set and return their respective
 attribute values if C<$value> is given.  Otherwise, they just return
 the value.
 
- $record->data(     [$value] ); # actual record data
- $record->preamble( [$value] ); # FlatFile::DataStore::Preamble object
+ $record->data(     $value ); # actual record data as a scalar ref
+ $record->preamble( $value ); # FlatFile::DataStore::Preamble object
 
 =cut
 
-sub data     {for($_[0]->{data}    ){$_=$_[1]if@_>1;return$_}}
+sub data     {
+    my( $self, $data ) = @_;
+    return $self->{data} unless $data;
+    for( $data ) {
+        if( ref eq 'SCALAR' ) { $self->{data} = $_  }
+        else                  { $self->{data} = \$_ }
+    }
+}
+
 sub preamble {for($_[0]->{preamble}){$_=$_[1]if@_>1;return$_}}
 
 =pod
@@ -139,12 +146,13 @@ The following read-only methods just return their respective values.
 The values all come from the record's contained preamble object.
 
  $record->user()
- $record->string()
+ $record->preamble_string()  # the 'string' attr of the preamble
  $record->indicator()
+ $record->transind()
  $record->date()
+ $record->transnum()
  $record->keynum()
  $record->reclen()
- $record->transnum()
  $record->thisfnum()
  $record->thisseek()
  $record->prevfnum()
@@ -152,22 +160,33 @@ The values all come from the record's contained preamble object.
  $record->nextfnum()
  $record->nextseek()
 
+ $record->is_created()
+ $record->is_updated()
+ $record->is_deleted()
+
 =cut
 
 sub user {for($_[0]->preamble()){defined&&return$_->user()}}
 
-sub string    {$_[0]->preamble()->string()   }
+sub preamble_string {$_[0]->preamble()->string()}
+
+sub datastore {$_[0]->preamble()->datastore()}
 sub indicator {$_[0]->preamble()->indicator()}
+sub transind  {$_[0]->preamble()->transind() }
 sub date      {$_[0]->preamble()->date()     }
+sub transnum  {$_[0]->preamble()->transnum() }
 sub keynum    {$_[0]->preamble()->keynum()   }
 sub reclen    {$_[0]->preamble()->reclen()   }
-sub transnum  {$_[0]->preamble()->transnum() }
 sub thisfnum  {$_[0]->preamble()->thisfnum() }
 sub thisseek  {$_[0]->preamble()->thisseek() }
 sub prevfnum  {$_[0]->preamble()->prevfnum() }
 sub prevseek  {$_[0]->preamble()->prevseek() }
 sub nextfnum  {$_[0]->preamble()->nextfnum() }
 sub nextseek  {$_[0]->preamble()->nextseek() }
+
+sub is_created {$_[0]->preamble()->is_created() }
+sub is_updated {$_[0]->preamble()->is_updated() }
+sub is_deleted {$_[0]->preamble()->is_deleted() }
 
 __END__
 

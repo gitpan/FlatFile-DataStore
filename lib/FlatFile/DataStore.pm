@@ -4,7 +4,8 @@
 
 =head1 NAME
 
-FlatFile::DataStore - Perl module that implements a flat file data store.
+FlatFile::DataStore - Perl module that implements a flat file data
+store.
 
 =head1 SYNOPSYS
 
@@ -12,7 +13,7 @@ FlatFile::DataStore - Perl module that implements a flat file data store.
 
  # new datastore object
 
- my $dir  = "/my/datastore/area";
+ my $dir  = "/my/datastore/directory";
  my $name = "dsname";
  my $ds   = FlatFile::DataStore->new( { dir => $dir, name => $name } );
 
@@ -62,27 +63,32 @@ Methods support the following actions:
  - delete
  - history
 
-Scripts supplied in the distribution perform:
+Additionally, FlatFile::DataStore::Utils provides the
+methods
 
- - validation
- - migration
+ - validate
+ - migrate
+
+and others.
+
+See FlatFile::DataStore::Tiehash for a tied interface.
 
 =head1 VERSION
 
-FlatFile::DataStore version 0.10
+FlatFile::DataStore version 0.11
 
 =cut
 
-our $VERSION = '0.10';
+our $VERSION = '0.11';
 
 use 5.008003;
 use strict;
 use warnings;
 
+use URI::Escape;
 use File::Path;
 use Fcntl qw(:DEFAULT :flock);
-use URI;
-use URI::Escape;
+use Digest::MD5 qw(md5_hex);
 use Data::Dumper;
 use Carp;
 
@@ -96,18 +102,19 @@ use Data::Omap qw( :ALL );
 # globals:
 
 my %Preamble = qw(
-    user        1
     indicator   1
+    transind    1
     date        1
+    transnum    1
     keynum      1
     reclen      1
-    transnum    1
     thisfnum    1
     thisseek    1
     prevfnum    1
     prevseek    1
     nextfnum    1
     nextseek    1
+    user        1
     );
 
 my %Optional = qw(
@@ -115,6 +122,11 @@ my %Optional = qw(
     dirlev      1
     tocmax      1
     keymax      1
+    prevfnum    1
+    prevseek    1
+    nextfnum    1
+    nextseek    1
+    userdata    1
     );
 
 # attributes that we generate (vs. user-supplied)
@@ -143,7 +155,7 @@ my %Attrs = ( %Preamble, %Optional, %Generated, qw(
     recsep      1
     ) );
 
-my $Ascii_chars = qr/^[ -~]+$/;
+my $Ascii_chars = qr/^[ -~]+$/;  # i.e., printables
 my( %Read_fh, %Write_fh );  # inside-outish object attributes
 
 #---------------------------------------------------------------------
@@ -156,7 +168,28 @@ Constructs a new FlatFile::DataStore object.
 
 Accepts hash ref giving values for C<dir> and C<name>.
 
- my $ds = FlatFile::DataStore->new( { dir => $dir, name => $name } );
+ my $ds = FlatFile::DataStore->new(
+     { dir  => $dir,
+       name => $name,
+     } );
+
+To initialize a new data store, edit the "$dir/$name.uri" file
+and enter a configuration URI (as the only line in the file),
+or pass the URI as the value of the C<uri> parameter, e.g.,
+
+ my $ds = FlatFile::DataStore->new(
+     { dir  => $dir,
+       name => $name,
+       uri  => join( ";" =>
+           "http://example.com?name=$name",
+           "desc=My%20Data%20Store",
+           "defaults=medium",
+           "user=8-%20-%7E",
+           "recsep=%0A",
+           ),
+     } );
+
+(See URI Configuration below.)
 
 Returns a reference to the FlatFile::DataStore object.
 
@@ -176,9 +209,13 @@ sub new {
 
 #---------------------------------------------------------------------
 # init(), called by new() to initialize a data store object
-#     parms: dir,  the directory where the data store lives
-#            name, the name of the data store
-#     will look for name.obj or name.uri and load those values
+#     parms (from hash ref):
+#       dir  ... the directory where the data store lives
+#       name ... the name of the data store
+#       uri  ... a uri to be used to configure the data store
+#     init() will look for dir/name.uri and load its values
+#
+# Private method.
 
 sub init {
     my( $self, $parms ) = @_;
@@ -187,43 +224,91 @@ sub init {
     my $name = $parms->{'name'};
     croak qq/Need "dir" and "name"/
         unless defined $dir and defined $name;
+    croak qq/Directory "$dir" doesn't exist./
+        unless -d $dir;
 
-    my $obj_file = "$dir/$name.obj";
+    # uri file may be
+    # - one line: just the uri, or
+    # - four lines: uri, object, object_md5, uri_md5
+    #
+    # if new_uri and uri file has
+    # - one line ... new_uri can replace old one
+    # - four lines (and new_uri is different) ...
+    #   new_uri can replace the old uri (and object)
+    #   but only if there aren't any data files yet
 
-    # if database has been initialized, there's an object file
-    if( -e $obj_file ) {
-        my $obj = $self->read_file( $obj_file );
-        $self = eval $obj;  # note: *new* $self
-        croak qq/Problem with $obj_file: $@/ if $@;
-        $self->dir( $dir );  # dir not in obj_file
+    my $new_uri = $parms->{'uri'};
+
+    my $uri_file = "$dir/$name.uri";
+    my( $uri, $obj, $uri_md5, $obj_md5 );
+    if( -e $uri_file ) {
+        my @lines = $self->read_file( $uri_file ); chomp @lines;
+        if( @lines == 4 ) {
+            ( $uri, $obj, $uri_md5, $obj_md5 ) = @lines;
+            croak "URI MD5 check failed."    unless $uri_md5 eq md5_hex( $uri );
+            croak "Object MD5 check failed." unless $obj_md5 eq md5_hex( $obj );
+        }
+        elsif( @lines == 1 ) {
+            $uri = $new_uri || shift @lines;
+        }
+        else {
+            croak "Invalid URI file: '$uri_file'";
+        }
     }
 
-    # otherwise read the uri file and initialize the database
-    else {
-        my $uri_file = "$dir/$name.uri";
-        my $uri = $self->read_file( $uri_file );
-        chomp $uri;
+    # if database has been initialized, there's an object
+    if( $obj ) {
+        $self = eval $obj;  # note: *new* $self
+        croak qq/Problem with $uri_file: $@/ if $@;
+        $self->dir( $dir );  # dir not in object
 
+        # new uri ok only if no data has been added yet
+        if( $new_uri         and
+            $new_uri ne $uri and
+            not -e $self->which_datafile( 1 ) ) {
+                $uri = $new_uri;
+                $obj = '';  # we want a new one
+        }
+    }
+
+    # otherwise initialize the database
+    unless( $obj ) {
+        $uri ||= $new_uri || croak "No URI.";
         $self->uri( $uri );
 
-        my $uri_parms = $self->burst_query;
+        # Note: 'require', not 'use'.  This isn't
+        # a "true" module--we're just bringing in
+        # some more FlatFile::DataStore methods.
+
+        require FlatFile::DataStore::Initialize;
+
+        my $uri_parms = $self->burst_query( \%Preamble );
         for my $attr ( keys %$uri_parms ) {
             croak qq/Unrecognized parameter: "$attr"/ unless $Attrs{ $attr };
-            # (using $attr as method name:)
+
+            # (note: using $attr as method name here)
             $self->$attr( $uri_parms->{ $attr } );
         }
 
-        # check that all fnums and seeks are the same
-        croak qq/fnum parameters differ/
-            unless $self->thisfnum eq $self->prevfnum and
-                   $self->thisfnum eq $self->nextfnum;
-        croak qq/seek parameters differ/
-            unless $self->thisseek eq $self->prevseek and
-                   $self->thisseek eq $self->nextseek;
+        # check that all fnums and seeks are the same ...
+        #
+        # (note: prevfnum, prevseek, nextfnum, and nextseek are
+        # optional, but if you have one of them, you must have
+        # all four, so checking for one of them here is enough)
+
+        if( $self->prevfnum ) {
+            croak qq/fnum parameters differ/
+                unless $self->thisfnum eq $self->prevfnum and
+                       $self->thisfnum eq $self->nextfnum;
+            croak qq/seek parameters differ/
+                unless $self->thisseek eq $self->prevseek and
+                       $self->thisseek eq $self->nextseek;
+        }
 
         # now for some generated attributes ...
         my( $len, $base );
-        ( $len, $base ) = split /-/, $self->thisfnum;  # fnums are equal
+        # (we can use thisfnum because all fnums are the same)
+        ( $len, $base ) = split /-/, $self->thisfnum;
         $self->fnumlen(    $len                        );
         $self->fnumbase(   $base                       );
         ( $len, $base ) = split /-/, $self->transnum;
@@ -237,158 +322,57 @@ sub init {
         $self->crud(       $self->make_crud            );
         $self->dir(        $dir                        );  # dir not in uri
 
-        $self->toclen( 10          +  # blanks
+        $self->toclen( 10          +  # blanks between parts
             3 *    $self->fnumlen  +  # datafnum, tocfnum, keyfnum
             2 *    $self->keylen   +  # numrecs keynum
             6 *    $self->translen +  # transnum and cruds
             length $self->recsep );
 
-        ( $len, $base ) = split /-/, $self->thisseek;  # seeks are equal
+        # (we can use thisseek because all seeks are the same)
+        ( $len, $base ) = split /-/, $self->thisseek;
         my $maxnum = substr( base_chars( $base ), -1) x $len;
         my $maxint = base2int $maxnum, $base;
 
-        if( $self->datamax ) {
-            $self->datamax( $self->convert_datamax );
-            croak qq/datamax too large/ if $self->datamax > $maxint;
+        if( my $max = $self->datamax ) {
+            $self->datamax( convert_max( $max ) );
+            if( $self->datamax > $maxint ) {
+                croak join '' =>
+                    "datamax (", $self->datamax, ") too large: ",
+                    "thisseek is ", $self->thisseek,
+                    " so maximum datamax is $maxnum base-$base ",
+                    "(decimal: $maxint)";
+            }
         }
         else {
             $self->datamax( $maxint );
         }
 
-        if( $self->dirmax ) {
+        if( my $max = $self->dirmax ) {
+            $self->dirmax( convert_max( $max ) );
             $self->dirlev( 1 ) unless $self->dirlev;
         }
 
+        if( my $max = $self->keymax ) {
+            $self->keymax( convert_max( $max ) );
+        }
+
+        if( my $max = $self->tocmax ) {
+            $self->tocmax( convert_max( $max ) );
+        }
+
         for my $attr ( keys %Attrs ) {
-            croak qq/Uninitialized attribute: "$_"/
-                if not defined $self->$attr and not $Optional{ $attr };
+            croak qq/Uninitialized attribute: "$attr"/
+                if not $Optional{ $attr } and not defined $self->$attr;
         }
 
         $self->initialize;
     }
 
+    for( $parms->{'userdata'} ) {
+        $self->userdata( $_ ) if defined; 
+    }
+
     return $self;  # this is either the same self or a new self
-}
-
-#---------------------------------------------------------------------
-# burst_query(), called by init() to parse the name.uri file
-#     also generates values for 'spec' and 'preamblelen'
-
-sub burst_query {
-    my( $self ) = @_;
-
-    my $uri   = $self->uri;
-    my $query = URI->new( $uri )->query();
-
-    my @pairs = split /[;&]/, $query;
-    my $omap  = [];  # psuedo-new(), ordered hash
-    my $pos   = 0;
-    my %parms;
-    for( @pairs ) {
-        my( $name, $val ) = split /=/, $_, 2;
-
-        $name = uri_unescape( $name );
-        $val  = uri_unescape( $val );
-
-        croak qq/"$name" duplicated in uri/ if $parms{ $name };
-
-        $parms{ $name } = $val;
-        if( $Preamble{ $name } ) {
-            my( $len, $parm ) = split /-/, $val, 2;
-            omap_add( $omap, $name => [ $pos, 0+$len, $parm ] );
-            $pos += $len;
-        }
-    }
-
-    # some attributes are generated here:
-    $parms{'specs'}       = $omap;
-    $parms{'preamblelen'} = $pos;
-
-    return \%parms;
-}
-
-#---------------------------------------------------------------------
-# make_preamble_regx(), called by init() to construct a regular
-#     expression that should match any record's preamble
-#     this regx should capture each fields value
-
-sub make_preamble_regx {
-    my( $self ) = @_;
-
-    my $regx = "";
-    for( $self->specs ) {  # specs() returns an array of hashrefs
-        my( $key, $aref )       = %$_;
-        my( $pos, $len, $parm ) = @$aref;
-
-        for( $key ) {
-            if( /indicator/ ) {
-                $regx .= ($len == 1 ? "([\Q$parm\E])" : "([\Q$parm\E]{$len})");
-            }
-            elsif( /user/ ) {  # should only allow $Ascii_chars
-                $regx .= ($len == 1 ? "([$parm])" : "([$parm]{$len})");
-            }
-            elsif( /date/ ) {
-                $regx .= ($len == 8 ? "([0-9]{8})" : "([0-9A-Za-z]{4})");
-            }
-            else {
-                my $chars = base_chars( $parm );
-                $chars =~ s/([0-9])[0-9]+([0-9])/$1-$2/;  # compress
-                $chars =~ s/([A-Z])[A-Z]+([A-Z])/$1-$2/;
-                $chars =~ s/([a-z])[a-z]+([a-z])/$1-$2/;
-                # '-' is 'null' character:
-                $regx .= ($len == 1 ? "([-$chars])" : "([-$chars]{$len})");
-            }
-        }
-    }
-    return qr/$regx/;
-}
-
-#---------------------------------------------------------------------
-# make_crud(), called by init() to construct a hash of indicators
-#     CRUD indicators: Create, Retrieve, Update, Delete
-#     the following are suggested, but configurable in uri
-#         + Create
-#         # Old Update (old record flagged as updated)
-#         = Update
-#         * Old Delete (old record flagged as deleted)
-#         - Delete
-#     (no indicator for Retrieve, n/a--but didn't want to say CUD)
-
-sub make_crud {
-    my( $self ) = @_;
-
-    my( $len, $chars ) = split /-/, $self->indicator, 2;
-    croak qq/Only single-character indicators supported./ if $len != 1;
-
-    my @c = split //, $chars;
-    my %c = map { $_ => 1 } @c;
-    my @n = keys %c;
-    croak qq/Need five unique indicator characters/ if @n != 5 or @c != 5;
-
-    my %crud;
-    @crud{ qw( create oldupd update olddel delete ) } = @c;
-    return \%crud;
-}
-
-#---------------------------------------------------------------------
-# convert_datamax(), called by init() to convert user-supplied
-#     datamax value into an integer: one can say, "500_000_000",
-#     "500M", or ".5G" to mean 500,000,000 bytes
-
-sub convert_datamax {
-    my( $self ) = @_;
-
-    # ignoring M/G ambiguities and using round numbers:
-    my %sizes = ( M => 10**6, G => 10**9 );
-
-    my $max = $self->datamax;
-    $max =~ s/_//g;
-    if( $max =~ /^([.0-9]+)([MG])/ ) {
-        my( $n, $s ) = ( $1, $2 );
-        $max = $n * $sizes{ $s };
-    }
-
-    return 0+$max;
 }
 
 #---------------------------------------------------------------------
@@ -421,8 +405,8 @@ sub create {
     my $data_ref;
     if( defined $record_data ) {
         my $reftype = ref $record_data;
-        unless( $reftype ) {  # string
-            $data_ref = \$record_data; }
+        unless( $reftype ) {
+            $data_ref = \$record_data; }  # string
         elsif( $reftype eq "SCALAR" ) {
             $data_ref = $record_data; }
         elsif( $reftype =~ /Record/ ) {
@@ -434,6 +418,9 @@ sub create {
     croak qq/No record data./ unless $data_ref;
 
     # get next keynum
+    #   (we don't call nextkeynum(), because we need the
+    #   $top_toc object for other things, too)
+
     my $top_toc = $self->new_toc( { int => 0 } );
     my $keyint  = $top_toc->keynum + 1;
     my $keylen  = $self->keylen;
@@ -443,8 +430,9 @@ sub create {
         if length $keynum > $keylen;
 
     # get keyfile
-    # need to lock files before getting seek positions
-    # want to lock keyfile before datafile
+    #   need to lock files before getting seek positions
+    #   want to lock keyfile before datafile
+
     my( $keyfile, $keyfint ) = $self->keyfile( $keyint );
     my $keyfh                = $self->locked_for_write( $keyfile );
     my $keyseek              = -s $keyfile;  # seekpos into keyfile
@@ -467,6 +455,7 @@ sub create {
         data     => $data_ref,
         preamble => {
             indicator => $self->crud->{'create'},
+            transind  => $self->crud->{'create'},
             date      => now( $self->dateformat ),
             transnum  => $transint,
             keynum    => $keyint,
@@ -477,17 +466,17 @@ sub create {
             } } );
 
     # write record to datafile
-    my $preamble = $record->string;
+    my $preamble = $record->preamble_string;
     my $dataline = $preamble . $$data_ref . $self->recsep;
-    $self->write_bytes( $datafh, $dataseek, $dataline );
+    $self->write_bytes( $datafh, $dataseek, \$dataline );
 
     # write preamble to keyfile
-    $self->write_bytes( $keyfh, $keyseek, $preamble . $self->recsep );
+    $self->write_bytes( $keyfh, $keyseek, \($preamble . $self->recsep) );
     
     # update table of contents (toc) file
     my $toc = $self->new_toc( { num => $datafnum } );
 
-    # note: datafnum and tocfnum are set in toc->new
+    # (note: datafnum and tocfnum are set in toc->new)
     $toc->keyfnum(   $keyfint          );
     $toc->keynum(    $keyint           );
     $toc->transnum(  $transint         );
@@ -557,12 +546,44 @@ sub retrieve {
     my $datafh   = $self->locked_for_read( $datafile );
     my $record   = $self->read_record( $datafh, $seekpos );
 
+    # if we got the record via key file, check that preambles match
     if( $keystring ) {
-        my $string = $record->string;
+        my $string = $record->preamble_string;
         croak qq/Mismatch "$string" vs. "$keystring"/ if $string ne $keystring;
     }
 
     return $record;
+}
+
+#---------------------------------------------------------------------
+
+=head2 retrieve_preamble( $keynum )
+
+Retrieves a preamble.  The parm C<$keynum> is a key number, i.e.,
+record sequence number
+
+Returns a Flatfile::DataStore::Preamble object.
+
+This method allows getting information about the record, e.g., if
+it's deleted, what's in the user data, etc., without the overhead of
+retrieving the full record data.
+
+=cut
+
+sub retrieve_preamble {
+    my( $self, $keynum ) = @_;
+
+    my $keyseek = $self->keyseek( $keynum );
+    my $keyfile = $self->keyfile( $keynum );
+    my $keyfh   = $self->locked_for_read( $keyfile );
+
+    my $trynum  = $self->lastkeynum;
+    croak qq/Record doesn't exist: "$keynum"/ if $keynum > $trynum;
+
+    my $keystring = $self->read_preamble( $keyfh, $keyseek );
+    my $preamble  = $self->new_preamble( { string => $keystring } );
+
+    return $preamble;
 }
 
 #---------------------------------------------------------------------
@@ -581,11 +602,18 @@ record and user data will be gotten from it.
 
 Returns a Flatfile::DataStore::Record object.
 
+Note: the record data (but not user data) is stored in the FF::DS::Record
+object as a scalar reference.  This is done for efficiency in the cases
+where the record data may be very large.  Likewise, the first parm to
+create() is allowed to be a scalar reference.
+
 =cut
 
 sub update {
     my $self = shift;
     my( $obj, $data_ref, $user_data ) = $self->normalize_parms( @_ );
+
+    my $prevnext = $self->prevfnum;  # boolean
 
     my $prevpreamble = $obj->string;
     my $keyint       = $obj->keynum;
@@ -602,8 +630,9 @@ sub update {
         unless $prevind =~ /[\Q$create$update$delete\E]/;
 
     # get keyfile
-    # need to lock files before getting seek positions
-    # want to lock keyfile before datafile
+    #   need to lock files before getting seek positions
+    #   want to lock keyfile before datafile
+
     my( $keyfile, $keyfint ) = $self->keyfile( $keyint );
     my $keyfh                = $self->locked_for_write( $keyfile );
     my $keyseek              = $self->keyseek( $keyint );
@@ -625,38 +654,45 @@ sub update {
     my $transint = $self->nexttransnum( $top_toc );
 
     # make new record
+    my $preamble_hash = {
+        indicator => $update,
+        transind  => $update,
+        date      => now( $self->dateformat ),
+        transnum  => $transint,
+        keynum    => $keyint,
+        reclen    => $reclen,
+        thisfnum  => $datafnum,
+        thisseek  => $dataseek,
+        user      => $user_data,
+        };
+    if( $prevnext ) {
+        $preamble_hash->{'prevfnum'} = $prevfnum;
+        $preamble_hash->{'prevseek'} = $prevseek;
+    }
     my $record = $self->new_record( {
         data     => $data_ref,
-        preamble => {
-            indicator => $self->crud->{'update'},
-            date      => now( $self->dateformat ),
-            transnum  => $transint,
-            keynum    => $keyint,
-            reclen    => $reclen,
-            thisfnum  => $datafnum,
-            thisseek  => $dataseek,
-            prevfnum  => $prevfnum,
-            prevseek  => $prevseek,
-            user      => $user_data,
-            } } );
+        preamble => $preamble_hash,
+        } );
 
     # write record to datafile
-    my $preamble = $record->string;
+    my $preamble = $record->preamble_string;
     my $dataline = $preamble . $$data_ref . $self->recsep;
-    $self->write_bytes( $datafh, $dataseek, $dataline );
+    $self->write_bytes( $datafh, $dataseek, \$dataline );
 
     # write preamble to keyfile (recsep there already)
-    $self->write_bytes( $keyfh, $keyseek, $preamble );
+    $self->write_bytes( $keyfh, $keyseek, \$preamble );
 
     # update the old preamble
-    $prevpreamble = $self->update_preamble( $prevpreamble, {
-        indicator => $self->crud->{ 'oldupd' },
-        nextfnum  => $datafnum,
-        nextseek  => $dataseek,
-        } );
-    my $prevdatafile = $self->which_datafile( $prevfnum );
-    my $prevdatafh   = $self->locked_for_write( $prevdatafile );
-    $self->write_bytes( $prevdatafh, $prevseek, $prevpreamble );
+    if( $prevnext ) {
+        $prevpreamble = $self->update_preamble( $prevpreamble, {
+            indicator => $self->crud->{ 'oldupd' },
+            nextfnum  => $datafnum,
+            nextseek  => $dataseek,
+            } );
+        my $prevdatafile = $self->which_datafile( $prevfnum );
+        my $prevdatafh   = $self->locked_for_write( $prevdatafile );
+        $self->write_bytes( $prevdatafh, $prevseek, \$prevpreamble );
+    }
 
     # update table of contents (toc) file
     my $toc = $self->new_toc( { num => $datafnum } );
@@ -669,14 +705,19 @@ sub update {
     $toc->numrecs(  $toc->numrecs + 1 );
 
     # was the previous record in another data file?
-    if( $prevfnum ne $datafnum ) {
-        my $prevtoc = $self->new_toc( { num => $prevfnum } );
-        $prevtoc->oldupd(    $prevtoc->oldupd  + 1 );
-        $prevtoc->numrecs(   $prevtoc->numrecs - 1 ) if $prevind ne $delete;
-        $prevtoc->write_toc( $prevtoc->datafnum    );
+    if( $prevnext ) {
+        if( $prevfnum ne $datafnum ) {
+            my $prevtoc = $self->new_toc( { num => $prevfnum } );
+            $prevtoc->oldupd(    $prevtoc->oldupd  + 1 );
+            $prevtoc->numrecs(   $prevtoc->numrecs - 1 ) if $prevind ne $delete;
+            $prevtoc->write_toc( $prevtoc->datafnum    );
+        }
+        else {
+            $toc->oldupd(  $toc->oldupd  + 1 );
+            $toc->numrecs( $toc->numrecs - 1 ) if $prevind ne $delete;
+        }
     }
     else {
-        $toc->oldupd(  $toc->oldupd  + 1 );
         $toc->numrecs( $toc->numrecs - 1 ) if $prevind ne $delete;
     }
 
@@ -687,7 +728,7 @@ sub update {
     $top_toc->tocfnum(  $toc->tocfnum         );
     $top_toc->transnum( $toc->transnum        );
     $top_toc->update(   $top_toc->update  + 1 );
-    $top_toc->oldupd(   $top_toc->oldupd  + 1 );
+    $top_toc->oldupd(   $top_toc->oldupd  + 1 ) if $prevnext;
     $top_toc->numrecs(  $top_toc->numrecs + 1 ) if $prevind eq $delete;
 
     $top_toc->write_toc( 0 );
@@ -711,11 +752,18 @@ record and user data will be gotten from it.
 
 Returns a Flatfile::DataStore::Record object.
 
+Note: the record data (but not user data) is stored in the FF::DS::Record
+object as a scalar reference.  This is done for efficiency in the cases
+where the record data may be very large.  Likewise, the first parm to
+create() is allowed to be a scalar reference.
+
 =cut
 
 sub delete {
     my $self = shift;
     my( $obj, $data_ref, $user_data ) = $self->normalize_parms( @_ );
+
+    my $prevnext = $self->prevfnum;  # boolean
 
     my $prevpreamble = $obj->string;
     my $keyint       = $obj->keynum;
@@ -754,38 +802,46 @@ sub delete {
     my $transint = $self->nexttransnum( $top_toc );
 
     # make new record
+    my $delete = $self->crud->{'delete'};
+    my $preamble_hash = {
+        indicator => $delete,
+        transind  => $delete,
+        date      => now( $self->dateformat ),
+        transnum  => $transint,
+        keynum    => $keyint,
+        reclen    => $reclen,
+        thisfnum  => $datafnum,
+        thisseek  => $dataseek,
+        user      => $user_data,
+        };
+    if( $prevnext ) {
+        $preamble_hash->{'prevfnum'} = $prevfnum;
+        $preamble_hash->{'prevseek'} = $prevseek;
+    }
     my $record = $self->new_record( {
         data     => $data_ref,
-        preamble => {
-            indicator => $self->crud->{'delete'},
-            date      => now( $self->dateformat ),
-            transnum  => $transint,
-            keynum    => $keyint,
-            reclen    => $reclen,
-            thisfnum  => $datafnum,
-            thisseek  => $dataseek,
-            prevfnum  => $prevfnum,
-            prevseek  => $prevseek,
-            user      => $user_data,
-            } } );
+        preamble => $preamble_hash,
+        } );
 
     # write record to datafile
-    my $preamble = $record->string;
+    my $preamble = $record->preamble_string;
     my $dataline = $preamble . $$data_ref . $self->recsep;
-    $self->write_bytes( $datafh, $dataseek, $dataline );
+    $self->write_bytes( $datafh, $dataseek, \$dataline );
 
     # write preamble to keyfile (recsep there already)
-    $self->write_bytes( $keyfh, $keyseek, $preamble );
+    $self->write_bytes( $keyfh, $keyseek, \$preamble );
 
     # update the old preamble
-    $prevpreamble = $self->update_preamble( $prevpreamble, {
-        indicator => $self->crud->{ 'olddel' },
-        nextfnum  => $datafnum,
-        nextseek  => $dataseek,
-        } );
-    my $prevdatafile = $self->which_datafile( $prevfnum );
-    my $prevdatafh   = $self->locked_for_write( $prevdatafile );
-    $self->write_bytes( $prevdatafh, $prevseek, $prevpreamble );
+    if( $prevnext ) {
+        $prevpreamble = $self->update_preamble( $prevpreamble, {
+            indicator => $self->crud->{ 'olddel' },
+            nextfnum  => $datafnum,
+            nextseek  => $dataseek,
+            } );
+        my $prevdatafile = $self->which_datafile( $prevfnum );
+        my $prevdatafh   = $self->locked_for_write( $prevdatafile );
+        $self->write_bytes( $prevdatafh, $prevseek, \$prevpreamble );
+    }
 
     # update table of contents (toc) file
     my $toc = $self->new_toc( { num => $datafnum } );
@@ -797,14 +853,19 @@ sub delete {
     $toc->delete(   $toc->delete + 1  );
 
     # was the previous record in another data file?
-    if( $prevfnum ne $datafnum ) {
-        my $prevtoc = $self->new_toc( { num => $prevfnum } );
-        $prevtoc->olddel(    $prevtoc->olddel  + 1 );
-        $prevtoc->numrecs(   $prevtoc->numrecs - 1 );
-        $prevtoc->write_toc( $prevtoc->datafnum    );
+    if( $prevnext ) {
+        if( $prevfnum ne $datafnum ) {
+            my $prevtoc = $self->new_toc( { num => $prevfnum } );
+            $prevtoc->olddel(    $prevtoc->olddel  + 1 );
+            $prevtoc->numrecs(   $prevtoc->numrecs - 1 );
+            $prevtoc->write_toc( $prevtoc->datafnum    );
+        }
+        else {
+            $toc->olddel(  $toc->olddel  + 1 );
+            $toc->numrecs( $toc->numrecs - 1 );
+        }
     }
     else {
-        $toc->olddel(  $toc->olddel  + 1 );
         $toc->numrecs( $toc->numrecs - 1 );
     }
 
@@ -815,7 +876,7 @@ sub delete {
     $top_toc->tocfnum(  $toc->tocfnum         );
     $top_toc->transnum( $toc->transnum        );
     $top_toc->delete(   $top_toc->delete  + 1 );
-    $top_toc->olddel(   $top_toc->olddel  + 1 );
+    $top_toc->olddel(   $top_toc->olddel  + 1 ) if $prevnext;
     $top_toc->numrecs(  $top_toc->numrecs - 1 );
 
     $top_toc->write_toc( 0 );
@@ -824,12 +885,14 @@ sub delete {
 }
 
 #---------------------------------------------------------------------
-# $obj         may be string, preamble obj, or record obj
-# $record_data may be string, scalar ref  , or record obj
-# $user_data   may be string
+# $obj         may be preamble string, preamble obj, or record obj
+# $record_data may be data string, scalar ref, or record obj
+# $user_data   may be data string
 #
 # $user_data, if not given, will be gotten from $record_data or $obj
 # $record_data, if not given, will be gotten from $obj
+#
+# Private method.
 
 sub normalize_parms {
     my( $self, $obj, $record_data, $user_data ) = @_;
@@ -839,7 +902,7 @@ sub normalize_parms {
     # set the preamble object
     my( $preamble, $data_ref, $try_user );
     my $reftype = ref $obj;
-    unless( $reftype ) {  # string
+    if(   !$reftype ) {  # preamble string
         $preamble = $self->new_preamble( { string => $obj } ); }
     elsif( $reftype =~ /Preamble/ ) {
         $preamble = $obj; }
@@ -853,8 +916,8 @@ sub normalize_parms {
     # set the record data
     if( defined $record_data ) {
         my $reftype = ref $record_data;
-        unless( $reftype ) {  # string
-            $data_ref = \$record_data; }
+        if(   !$reftype ) {
+            $data_ref = \$record_data; }  # string
         elsif( $reftype eq "SCALAR" ) {
             $data_ref = $record_data; }
         elsif( $reftype =~ /Record/ ) {
@@ -949,7 +1012,9 @@ sub specs {
 Sets and returns the C<dir> attribute value if C<$dir> is given,
 otherwise just returns the value.
 
-If C<$dir> is given, the directory must already exist.
+If C<$dir> is given and is a null string, the C<dir> object attribute
+is removed from the object.  If C<$dir> is not null, the directory
+must already exist.
 
 =cut
 
@@ -969,38 +1034,39 @@ sub dir {
 
 #---------------------------------------------------------------------
 
-=head2 Preamble accessors
+=head2 Preamble accessors (from the uri)
 
 The following methods set and return their respective attribute values
 if C<$value> is given.  Otherwise, they just return the value.
 
- $ds->indicator( [$value] ); # from uri (length-characters)
- $ds->date(      [$value] ); # from uri (length-format)
- $ds->transnum(  [$value] ); # from uri (length-base)
- $ds->keynum(    [$value] ); # from uri (length-base)
- $ds->reclen(    [$value] ); # from uri (length-base)
- $ds->thisfnum(  [$value] ); # from uri (length-base)
- $ds->thisseek(  [$value] ); # from uri (length-base)
- $ds->prevfnum(  [$value] ); # from uri (length-base)
- $ds->prevseek(  [$value] ); # from uri (length-base)
- $ds->nextfnum(  [$value] ); # from uri (length-base)
- $ds->nextseek(  [$value] ); # from uri (length-base)
- $ds->user(      [$value] ); # from uri (length-characters)
+ $ds->indicator( [$value] );  # length-characters
+ $ds->transind(  [$value] );  # length-characters
+ $ds->date(      [$value] );  # length-format
+ $ds->transnum(  [$value] );  # length-base
+ $ds->keynum(    [$value] );  # length-base
+ $ds->reclen(    [$value] );  # length-base
+ $ds->thisfnum(  [$value] );  # length-base
+ $ds->thisseek(  [$value] );  # length-base
+ $ds->prevfnum(  [$value] );  # length-base
+ $ds->prevseek(  [$value] );  # length-base
+ $ds->nextfnum(  [$value] );  # length-base
+ $ds->nextseek(  [$value] );  # length-base
+ $ds->user(      [$value] );  # length-characters
 
 =head2 Other accessors
 
  $ds->name(        [$value] ); # from uri, name of data store
  $ds->desc(        [$value] ); # from uri, description of data store
- $ds->recsep(      [$value] ); # from uri (character(s))
+ $ds->recsep(      [$value] ); # from uri, character(s)
  $ds->uri(         [$value] ); # full uri as is
- $ds->preamblelen( [$value] ); # length of full preamble string
+ $ds->preamblelen( [$value] ); # length of preamble string
  $ds->toclen(      [$value] ); # length of toc entry
  $ds->keylen(      [$value] ); # length of stored keynum
- $ds->keybase(     [$value] ); # base of stored keynum
+ $ds->keybase(     [$value] ); # base   of stored keynum
  $ds->translen(    [$value] ); # length of stored transaction number
- $ds->transbase(   [$value] ); # base of stored trancation number
+ $ds->transbase(   [$value] ); # base   of stored transation number
  $ds->fnumlen(     [$value] ); # length of stored file number
- $ds->fnumbase(    [$value] ); # base of stored file number
+ $ds->fnumbase(    [$value] ); # base   of stored file number
  $ds->dateformat(  [$value] ); # format from uri
  $ds->regx(        [$value] ); # capturing regx for preamble string
  $ds->datamax(     [$value] ); # maximum bytes in a data file
@@ -1011,17 +1077,22 @@ if C<$value> is given.  Otherwise, they just return the value.
         oldupd => '#',
         update => '=',
         olddel => '*',
-        delete => '-'
+        delete => '-',
+        '+' => 'create',
+        '#' => 'oldupd',
+        '=' => 'update',
+        '*' => 'olddel',
+        '-' => 'delete',
      }
 
- (translates logical actions into their symbolic indicators)
+ (logical actions <=> symbolic indicators)
 
-=head2 Optional accessors
+=head2 Accessors for optional attributes
 
- $ds->dirmax(  [$value] ); # maximum files in a directory
- $ds->dirlev(  [$value] ); # number of directory levels
- $ds->tocmax(  [$value] ); # maximum toc entries
- $ds->keymax(  [$value] ); # maximum key entries
+ $ds->dirmax( [$value] );  # maximum files in a directory
+ $ds->dirlev( [$value] );  # number of directory levels
+ $ds->tocmax( [$value] );  # maximum toc entries
+ $ds->keymax( [$value] );  # maximum key entries
 
 If no C<dirmax>, directories will keep being added to.
 
@@ -1037,13 +1108,24 @@ indefinitely.
 =cut
 
 sub indicator {for($_[0]->{indicator} ){$_=$_[1]if@_>1;return$_}}
+sub transind  {for($_[0]->{transind}  ){$_=$_[1]if@_>1;return$_}}
 sub date      {for($_[0]->{date}      ){$_=$_[1]if@_>1;return$_}}
 sub transnum  {for($_[0]->{transnum}  ){$_=$_[1]if@_>1;return$_}}
 sub keynum    {for($_[0]->{keynum}    ){$_=$_[1]if@_>1;return$_}}
 sub reclen    {for($_[0]->{reclen}    ){$_=$_[1]if@_>1;return$_}}
 sub thisfnum  {for($_[0]->{thisfnum}  ){$_=$_[1]if@_>1;return$_}}
 sub thisseek  {for($_[0]->{thisseek}  ){$_=$_[1]if@_>1;return$_}}
-sub prevfnum  {for($_[0]->{prevfnum}  ){$_=$_[1]if@_>1;return$_}}
+
+# prevfnum, prevseek, nextfnum, nextseek are optional attributes;
+# prevfnum() is set up to avoid autovivification, because it is
+# the accessor used to test if these optional attributes are set
+
+sub prevfnum {
+    my $self = shift;
+    return $self->{prevfnum} = $_[0] if @_;
+    return $self->{prevfnum} if exists $self->{prevfnum};
+}
+
 sub prevseek  {for($_[0]->{prevseek}  ){$_=$_[1]if@_>1;return$_}}
 sub nextfnum  {for($_[0]->{nextfnum}  ){$_=$_[1]if@_>1;return$_}}
 sub nextseek  {for($_[0]->{nextseek}  ){$_=$_[1]if@_>1;return$_}}
@@ -1067,11 +1149,11 @@ sub transbase   {for($_[0]->{transbase}   ){$_=0+$_[1]if@_>1;return$_}}
 sub fnumlen     {for($_[0]->{fnumlen}     ){$_=0+$_[1]if@_>1;return$_}}
 sub fnumbase    {for($_[0]->{fnumbase}    ){$_=0+$_[1]if@_>1;return$_}}
 
-# optional:
+# optional (set up to avoid autovivification):
 
 sub dirmax {
     my $self = shift;
-    return $self->{dirmax} = 0+$_[0] if @_;
+    return $self->{dirmax} = $_[0] if @_;
     return $self->{dirmax} if exists $self->{dirmax};
 }
 sub dirlev {
@@ -1081,58 +1163,28 @@ sub dirlev {
 }
 sub tocmax {
     my $self = shift;
-    return $self->{tocmax} = 0+$_[0] if @_;
+    return $self->{tocmax} = $_[0] if @_;
     return $self->{tocmax} if exists $self->{tocmax};
 }
 sub keymax {
     my $self = shift;
-    return $self->{keymax} = 0+$_[0] if @_;
+    return $self->{keymax} = $_[0] if @_;
     return $self->{keymax} if exists $self->{keymax};
 }
 
-#---------------------------------------------------------------------
-
-=head1 OBJECT METHODS, UTILITARIAN
-
-TODO: more pod here ...
-
-=cut
-
-#---------------------------------------------------------------------
-# initialize(), called by init() when datastore is first used
-#     creates name.obj file to bypass uri parsing from now on
-
-sub initialize {
-    my( $self ) = @_;
-
-    # can't initialize after data has been added
-    my $fnum     = int2base 1, $self->fnumbase, $self->fnumlen;
-    my $datafile = $self->which_datafile( $fnum );
-    croak qq/Can't initialize database: data files exist (e.g., $datafile)./
-        if -e $datafile;
-
-    # make object a one-liner
-    local $Data::Dumper::Quotekeys = 0;
-    local $Data::Dumper::Pair      = '=>';
-    local $Data::Dumper::Useqq     = 1;
-    local $Data::Dumper::Terse     = 1;
-    local $Data::Dumper::Indent    = 0;
-
-    # delete dir, don't want it in obj file
-    my $savedir = $self->dir;
-    $self->dir("");
-
-    my $obj_file = "$savedir/" . $self->name . ".obj";
-    $self->write_file( $obj_file, Dumper $self );
-
-    # restore dir
-    $self->dir( $savedir );
-
+# default to null string (will get space-padded)
+sub userdata {
+    my $self = shift;
+    return $self->{userdata} = $_[0] if @_;
+    return '' unless exists $self->{userdata};
+    return $self->{userdata};
 }
 
 #---------------------------------------------------------------------
-# new_toc()
-#     wrapper for FlatFile::DataStore::Toc->new()
+# new_toc( \%parms )
+#     This method is a wrapper for FlatFile::DataStore::Toc->new().
+#
+# Private method.
 
 sub new_toc {
     my( $self, $parms ) = @_;
@@ -1141,8 +1193,11 @@ sub new_toc {
 }
 
 #---------------------------------------------------------------------
-# new_preamble(), called by various subs
-#     wrapper for FlatFile::DataStore::Preamble->new()
+# new_preamble( \%parms )
+#     This method is a wrapper for
+#     FlatFile::DataStore::Preamble->new().
+#
+# Private method.
 
 sub new_preamble {
     my( $self, $parms ) = @_;
@@ -1151,8 +1206,10 @@ sub new_preamble {
 }
 
 #---------------------------------------------------------------------
-# new_record(), called by various subs
-#     wrapper for FlatFile::DataStore::Record->new()
+# new_record( \%parms )
+#     This method is a wrapper for FlatFile::DataStore::Record->new().
+#
+# Private method.
 
 sub new_record {
     my( $self, $parms ) = @_;
@@ -1164,6 +1221,12 @@ sub new_record {
 }
 
 #---------------------------------------------------------------------
+# keyfile()
+#    takes an integer that is the record sequence number and returns
+#    the path to the keyfile where that record's preamble is
+#
+# Private method.
+
 sub keyfile {
     my( $self, $keyint ) = @_;
 
@@ -1196,11 +1259,13 @@ sub keyfile {
             $path = $path? "$dirnum/$path": $dirnum;
             $this = $dirint;
         }
-        $path = "$name/key$path";
+        $path = $self->dir . "/$name/key$path";
         mkpath( $path ) unless -d $path;
         $keyfile = "$path/$keyfile";
     }
-    $keyfile = $self->dir . "/$keyfile";
+    else {
+        $keyfile = $self->dir . "/$keyfile";
+    }
 
     return ( $keyfile, $keyfint ) if wantarray;
     return $keyfile;
@@ -1208,9 +1273,22 @@ sub keyfile {
 }
 
 #---------------------------------------------------------------------
-# datafile(), called by create(), update(), and delete() to
-#     get the current data file; the parm $reclen is used to see if
-#     new_datafile() needs to be called
+# datafile(), called by create(), update(), and delete()
+#     Similarly to which_datafile(), this method takes a file number
+#     and returns the path to that datafile.  Unlike which_datafile(),
+#     this method also takes a record length to check for overflow.
+#     That is, if the record about to be written would make a datafile
+#     become too large (> datamax), the file number is incremented,
+#     and the path to that new datafile is returned--along with the
+#     new file number.  Calls to datafile() should always take this
+#     new file number into account.
+#
+#     Will croak if the record is way too big or if the new file
+#     number is longer than the max length for file numbers.  In
+#     either case, a new data store must be configured to handle the
+#     extra data, and the old data store must be migrated to it.
+#
+# Private method.
 
 sub datafile {
     my( $self, $fnum, $reclen ) = @_;
@@ -1239,6 +1317,13 @@ sub datafile {
 }
 
 #---------------------------------------------------------------------
+# which_datafile()
+#     Takes a file number and returns the path to that datafile.
+#     Takes into account dirlev and dirmax, if set, and will create
+#     new directories as needed.
+#
+# Private method.
+
 sub which_datafile {
     my( $self, $datafnum ) = @_;
 
@@ -1258,93 +1343,23 @@ sub which_datafile {
             $path = $path? "$dirnum/$path": $dirnum;
             $this = $dirint;
         }
-        $path = "$name/data$path";
+        $path = $self->dir . "/$name/data$path";
         mkpath( $path ) unless -d $path;
         $datafile = "$path/$datafile";
     }
-    $datafile = $self->dir . "/$datafile";
+    else {
+        $datafile = $self->dir . "/$datafile";
+    }
 
     return $datafile;
-
 }
 
 #---------------------------------------------------------------------
-
-=head2 howmany( [$regx] )
-
-Returns count of records whose indicators match regx, e.g.,
-
- $self->howmany( qr/create|update/ );
- $self->howmany( qr/delete/ );
- $self->howmany( qr/oldupd|olddel/ );
-
-If no regx, howmany() returns numrecs from the toc file.
-
-=cut
-
-sub howmany {
-    my( $self, $regx ) = @_;
-
-    my $top_toc = $self->new_toc( { int => 0 } );
-
-    return $top_toc->numrecs unless $regx;
-
-    my $howmany = 0;
-    for( qw( create update delete oldupd olddel ) ) {
-        $howmany += $top_toc->$_() if /$regx/ }
-    return $howmany;
-}
-
-#---------------------------------------------------------------------
-# keyseek(), seek to a particular line in the key file
-            
-sub keyseek {
-    my( $self, $keyint ) = @_;
-
-    my $keylen = $self->preamblelen + length( $self->recsep );
-
-    my $keyseek;
-    if( my $keymax = $self->keymax ) {
-        my $skip = int( $keyint / $keymax );
-        $keyseek = $keylen * ( $keyint - ( $skip * $keymax ) ); }
-    else {
-        $keyseek = $keylen * $keyint; }
-
-    return $keyseek;
-}
-
-#---------------------------------------------------------------------
-# lastkeynum(), called by retrieve to check if requested number exists
-
-sub lastkeynum {
-    my( $self ) = @_;
-
-    my $top_toc = $self->new_toc( { int => 0 } );
-    my $keyint  = $top_toc->keynum;
-
-    return $keyint;
-}
-
-#---------------------------------------------------------------------
-# nexttransnum, get next transaction number
-
-sub nexttransnum {
-    my( $self, $top_toc ) = @_;
-
-    $top_toc ||= $self->new_toc( { int => 0 } );
-
-    my $transint  = $top_toc->transnum + 1;
-    my $translen  = $self->translen;
-    my $transbase = $self->transbase;
-    my $transnum  = int2base $transint, $transbase, $translen;
-    croak qq/Database exceeds configured size (transnum: "$transnum" too long)/
-        if length $transnum > $translen;
-
-    return $transint;
-}
-
-#---------------------------------------------------------------------
-# sub all_datafiles(), called in migrate_validate utility script
+# sub all_datafiles(), called by validate utility
+#     Returns an array of paths for all of the data files in the data
+#     store.
+#
+# Private method.
 
 sub all_datafiles {
     my( $self ) = @_;
@@ -1362,7 +1377,130 @@ sub all_datafiles {
 }
 
 #---------------------------------------------------------------------
+
+=head1 OBJECT METHODS, Other
+
+=head2 howmany( [$regx] )
+
+Returns count of records whose indicators match regx, e.g.,
+
+    $self->howmany( qr/create|update/ );
+    $self->howmany( qr/delete/ );
+    $self->howmany( qr/oldupd|olddel/ );
+
+If no regx, howmany() returns numrecs from the toc file, which
+should give the same number as qw/create|update/.
+
+=cut
+
+sub howmany {
+    my( $self, $regx ) = @_;
+
+    my $top_toc = $self->new_toc( { int => 0 } );
+
+    return $top_toc->numrecs unless $regx;
+
+    my $howmany = 0;
+    for( qw( create update delete oldupd olddel ) ) {
+        $howmany += $top_toc->$_() if /$regx/ }
+    return $howmany;
+}
+
+#---------------------------------------------------------------------
+
+=head2 lastkeynum()
+
+Returns the last key number used, i.e., the sequence number of the
+last record added to the data store, as an integer.
+
+=cut
+
+sub lastkeynum {
+    my( $self ) = @_;
+
+    my $top_toc = $self->new_toc( { int => 0 } );
+    my $keyint  = $top_toc->keynum;
+
+    return $keyint;
+}
+
+=head2 nextkeynum()
+
+Returns lastkeynum()+1 (a convenience method).  This would be useful
+for adding a new record to a hash tied to a data store, e.g.,
+
+    $h{ $ds->nextkeynum } = "New record data.";
+
+=cut
+
+sub nextkeynum {
+   for( $_[0]->lastkeynum ) {
+       return 0 unless defined;
+       return $_ + 1;
+   }
+}
+
+#---------------------------------------------------------------------
+# keyseek(), seek to a particular line in the key file
+#     Takes the record sequence number as an integer and returns
+#     the seek position needed to retrieve the record's preamble from
+#     the pertinent keyfile.  Interestingly, this seek position is
+#     only a function of the keyint and keymax values, so this
+#     routine doesn't need to know which keyfile we're seeking into.
+#
+# Private method.
+            
+sub keyseek {
+    my( $self, $keyint ) = @_;
+
+    my $keylen = $self->preamblelen + length( $self->recsep );
+
+    my $keyseek;
+    if( my $keymax = $self->keymax ) {
+        my $skip = int( $keyint / $keymax );
+        $keyseek = $keylen * ( $keyint - ( $skip * $keymax ) ); }
+    else {
+        $keyseek = $keylen * $keyint; }
+
+    return $keyseek;
+}
+
+#---------------------------------------------------------------------
+# nexttransnum(), get next transaction number
+#     Takes a FF::DS::Toc (table of contents) object, which should be
+#     "top" Toc that has many of the key values for the data store.
+#     Returns the next transaction number as an integer.
+#     Will croak if this number is longer than allowed by the current
+#     configuration.  In that case, a new datastore that allows for
+#     more transactions must be configured and the old data store
+#     migrated to it.
+#
+# Private method.
+
+sub nexttransnum {
+    my( $self, $top_toc ) = @_;
+
+    $top_toc ||= $self->new_toc( { int => 0 } );
+
+    my $transint  = $top_toc->transnum + 1;
+    my $translen  = $self->translen;
+    my $transbase = $self->transbase;
+    my $transnum  = int2base $transint, $transbase, $translen;
+    croak qq/Database exceeds configured size (transnum: "$transnum" too long)/
+        if length $transnum > $translen;
+
+    return $transint;
+}
+
+#---------------------------------------------------------------------
 # burst_pramble(), called various places to parse preamble string
+#     Takes a preamble string (as stored on disk) and parses out all
+#     of the values, based on regx and specs.  Returns a hash ref of
+#     these values.  Called by FF::DS::Preamble->new() to create an
+#     object from a string, and by retrieve() to get the file number
+#     and seek pos for reading a record.
+#
+# Private method.
 
 sub burst_preamble {
     my( $self, $string ) = @_;
@@ -1378,7 +1516,7 @@ sub burst_preamble {
         my( $pos, $len, $parm ) = @$aref;
         my $field = $fields[ $i++ ];
         for( $key ) {
-            if( /indicator|date/ ) {
+            if( /indicator|transind|date/ ) {
                 $parms{ $key } = $field;
             }
             elsif( /user/ ) {
@@ -1401,6 +1539,11 @@ sub burst_preamble {
 
 #---------------------------------------------------------------------
 # update_preamble(), called by update() and delete() to flag old recs
+#     Take a preamble string and a hash ref of values to change, and
+#     returns a new preamble string with those values changed.  Will
+#     croak if the new preamble does match the regx attribute
+#
+# Private method.
 
 sub update_preamble {
     my( $self, $preamble, $parms ) = @_;
@@ -1413,7 +1556,7 @@ sub update_preamble {
         my( $pos, $len, $parm ) = @{omap_get_values( $omap, $_ )};
 
         my $try;
-        if( /indicator|date|user/ ) {
+        if( /indicator|transind|date|user/ ) {
             $try = sprintf "%-${len}s", $value;
             croak qq/Invalid value for "$_" ($try)/
                 unless $try =~ $Ascii_chars;
@@ -1441,20 +1584,38 @@ sub update_preamble {
 #---------------------------------------------------------------------
 
 #---------------------------------------------------------------------
+# DESTROY() supports tied and untied objects
+
 sub DESTROY {
     my $self = shift;
     $self->close_files;
 }
 
 #---------------------------------------------------------------------
+
+=head2 close_files()
+
+This routine will close all open files associated with the data store
+object.  This is used in DESTROY(), but could conceivably be called by
+the application if it detects too many open files.
+
+ $ds->close_files();
+
+The intention is that close_files() can be called any time -- new files
+would be opened again as needed.
+
+=cut
+
 sub close_files {
     my $self = shift;
+
     if( my $href = $Read_fh{ $self } ) {
         while( my( $file, $fh ) = each %$href ) {
             close $fh or die "Can't close $file: $!";
         }
         delete $Read_fh{ $self };
     }
+
     if( my $href = $Write_fh{ $self } ) {
         while( my( $file, $fh ) = each %$href ) {
             close $fh or die "Can't close $file: $!";
@@ -1464,6 +1625,13 @@ sub close_files {
 }
 
 #---------------------------------------------------------------------
+# locked_for_read()
+#     Takes a file name, opens it for input, locks it, and returns the
+#     open file handle.  It caches this file handle, and the cached
+#     handle will be returned instead if it exists in the cache.
+#
+# Private method.
+
 sub locked_for_read {
     my( $self, $file ) = @_;
 
@@ -1471,8 +1639,8 @@ sub locked_for_read {
     return $open_fh if $open_fh;
 
     my $fh;
-    open $fh, '<', $file or croak "Can't open $file: $!";
-    flock $fh, LOCK_SH   or croak "Can't lock $file: $!";
+    open $fh, '<', $file or croak "Can't open for read $file: $!";
+    flock $fh, LOCK_SH   or croak "Can't lock shared $file: $!";
     binmode $fh;
 
     $Read_fh{ $self }{ $file } = $fh;
@@ -1480,16 +1648,30 @@ sub locked_for_read {
 }
 
 #---------------------------------------------------------------------
+# locked_for_write()
+#     Takes a file name, opens it for read/write, locks it, and
+#     returns the open file handle.  It caches this file handle, and
+#     the cached handle will be returned instead if it exists in the
+#     cache.
+#
+# Private method.
+
 sub locked_for_write {
     my( $self, $file ) = @_;
 
     my $open_fh = $Write_fh{ $self }{ $file };
     return $open_fh if $open_fh;
 
+    # remove possible shared lock on file
+    if( exists $Read_fh{ $self }{ $file } ) {
+        close  $Read_fh{ $self }{ $file };
+        delete $Read_fh{ $self }{ $file };
+    }
+
     my $fh;
-    sysopen( $fh, $file, O_RDWR|O_CREAT ) or croak "Can't open $file: $!";
-    my $ofh = select( $fh ); $| = 1; select ( $ofh );
-    flock $fh, LOCK_EX                    or croak "Can't lock $file: $!";
+    sysopen( $fh, $file, O_RDWR|O_CREAT ) or croak "Can't open for read/write $file: $!";
+    my $ofh = select( $fh ); $| = 1; select ( $ofh );  # flush buffers
+    flock $fh, LOCK_EX                    or croak "Can't lock exclusive $file: $!";
     binmode $fh;
 
     $Write_fh{ $self }{ $file } = $fh;
@@ -1497,12 +1679,21 @@ sub locked_for_write {
 }
 
 #---------------------------------------------------------------------
+# read_record()
+#     Takes an open file handle and a seek position and
+#     - seeks there to read the preamble
+#     - seeks to the record data and reads that
+#     - returns a record object created from the preamble and data
+#
+# Private method.
+
 sub read_record {
     my( $self, $fh, $seekpos ) = @_;
 
-    my $len      = $self->preamblelen;
-    my $string   = $self->read_bytes( $fh, $seekpos, $len );
-    my $preamble = $self->new_preamble( { string => $string } );
+    # we don't call read_preamble() because we need len anyway
+    my $len  = $self->preamblelen;
+    my $sref = $self->read_bytes( $fh, $seekpos, $len ); 
+    my $preamble = $self->new_preamble( { string => $$sref } );
 
     $seekpos    += $len;
     $len         = $preamble->reclen;
@@ -1510,22 +1701,39 @@ sub read_record {
 
     my $record = $self->new_record( {
         preamble => $preamble,
-        data     => \$recdata,
+        data     => $recdata,  # scalar ref
         } );
 
     return $record;
 }
 
 #---------------------------------------------------------------------
+# read_preamble()
+#     Takes an open file handle (probably the key file) and a seek
+#     position and
+#     - seeks there to read the preamble
+#     - returns the preamble string (not an object)
+#
+# Private method.
+
 sub read_preamble {
     my( $self, $fh, $seekpos ) = @_;
 
-    my $len = $self->preamblelen;
+    my $len  = $self->preamblelen;
+    my $sref = $self->read_bytes( $fh, $seekpos, $len ); 
 
-    return $self->read_bytes( $fh, $seekpos, $len ); 
+    return $$sref;  # want the string, not the ref
 }
 
 #---------------------------------------------------------------------
+# read_bytes()
+#     Takes an open file handle, a seek position and a length, reads
+#     that many bytes from that position, and returns a scalar
+#     reference to that data.  It is expected that the file is set
+#     to binmode.
+#
+# Private method.
+
 sub read_bytes {
     my( $self, $fh, $seekpos, $len ) = @_;
 
@@ -1534,49 +1742,44 @@ sub read_bytes {
     my $rc = sysread $fh, $string, $len;
     croak "Can't read: $!" unless defined $rc;
 
-    return $string;
+    return \$string;
 }
 
 #---------------------------------------------------------------------
+# write_bytes()
+#     Takes an open file handle, a seek position, and a scalar
+#     reference and writes that data to the file at that position.
+#     It is expected that the file is set to binmode.
+#
+# Private method.
+
 sub write_bytes {
-    my( $self, $fh, $seekpos, $string ) = @_;
+    my( $self, $fh, $seekpos, $sref ) = @_;
 
     sysseek  $fh, $seekpos, 0 or croak "Can't seek: $!";
-    syswrite $fh, $string     or croak "Can't write: $!";
+    syswrite $fh, $$sref      or croak "Can't write: $!";
 
 }
 
 #---------------------------------------------------------------------
-# read_file(), slurp contents of file
+# read_file()
+#     Takes a file name, locks it for reading, and returnes the
+#     contents as an array of lines
+#
+# Private method.
 
 sub read_file {
     my( $self, $file ) = @_;
 
     my $fh = $self->locked_for_read( $file );
-    local $/;
     return <$fh>;
 }
 
 #---------------------------------------------------------------------
-# write_file(), dump contents to file (opposite of slurp, sort of)
-
-sub write_file {
-    my( $self, $file, $contents ) = @_;
-
-    my $fh = $self->locked_for_write( $file );
-    my $type = ref $contents;
-    if( $type ) {
-        if   ( $type eq 'SCALAR' ) { print $fh $$contents           }
-        elsif( $type eq 'ARRAY'  ) { print $fh join "", @$contents  }
-        else                       { croak "Unrecognized type: $type" }
-    }
-    else { print $fh $contents }
-}
-
-#---------------------------------------------------------------------
-# new(), expects yyyymmdd or yymd (or mmddyyyy, mdyy, etc.)
-#        returns current date formatted as requested
-# called by create(), update(), delete()
+# now(), expects 'yyyymmdd' or 'yymd' (or 'mmddyyyy', 'mdyy', etc.)
+#     Returns current date formatted as requested.
+#
+# Private method.
 
 sub now {
     my( $format ) = @_;
@@ -1598,49 +1801,622 @@ sub now {
 }
 
 #---------------------------------------------------------------------
-# then(), translates stored date to YYYY-MM-DD
-# called by FF::DD::Preamble::init()
+# TIEHASH() supports tied hash access
+#     Returns data store object
 
-sub then {
-    my( $self, $date, $format ) = @_;
-    my( $y, $m, $d );
-    my $ret;
-    for( $format ) {
-        if( /yyyy/ ) {  # decimal year/month/day
-            $y = substr $date, index( $format, 'yyyy' ), 4;
-            $m = substr $date, index( $format, 'mm'   ), 2;
-            $d = substr $date, index( $format, 'dd'   ), 2;
-        }
-        else {  # assume base62 year/month/day
-            $y = substr $date, index( $format, 'yy' ), 2;
-            $m = substr $date, index( $format, 'm'  ), 1;
-            $d = substr $date, index( $format, 'd'  ), 1;
-            $y = sprintf "%04d", base2int( $y, 62 );
-            $m = sprintf "%02d", base2int( $m, 62 );
-            $d = sprintf "%02d", base2int( $d, 62 );
-        }
-    }
-    return "$y-$m-$d";
+# Note: because of how new_toc and new_record are implemented, I
+# couldn't make Tiehash a subclass, so I'm requiring it into this
+# class.  This may change in the future -- or not.
+
+sub TIEHASH {
+
+    # Note: 'require', not 'use'.  This isn't
+    # a "true" module--we're just bringing in
+    # some more FlatFile::DataStore methods.
+
+    require FlatFile::DataStore::Tiehash;
+
+    my $class = shift;
+    $class->new( @_ );
 }
 
 1;  # returned
 
 __END__
 
+=head1 URI Configuration
+
+It may seem odd to use a URI as a configuration file.  I needed some
+configuration approach and wanted to stay as lightweight as possible.
+The specs for a URI are fairly well-known, and it allows for everything
+we need, so I chose that approach.
+
+The examples all show a URL, because I thought it would be a nice touch
+to be able to visit the URL and have the page tell you things about the
+data store.  This is what the utils/flatfile-datastore.cgi program is
+intended to do, but it is in a very young/rough state so far.
+
+Following are the URI configuration parameters.  The order of the
+preamble parameters I<does> matter: that's the order those fields will
+appear in each record preamble.  Otherwise the order doesn't matter.
+
+Where needed, parameter values may be uri-escaped, e.g., %20 for space.
+
+Parameter values should be percent-encoded (uri escaped).  Use %20 for
+space (don't be tempted to use '+').  Use URI::Escape::uri_escape , if
+desired, e.g.,
+
+    my $name = 'example';
+    my $dir  = '/example/dir';
+
+    use URI::Escape;
+    my $datastore = FlatFile::DataStore::->new( {
+        name => $name,
+        dir  => $dir,
+        uri  => join( ';' =>
+            "http://example.com?name=$name",
+            "desc=" . uri_escape( 'My DataStore' ),
+            "defaults=medium",
+            "user=" . uri_escape( '8- -~' ),
+            "recsep=%0A",
+        ) }
+    );
+
+=head2 Preamble parameters
+
+All of the preamble parameters are required.
+
+(In fact, four of them are optional, but leaving them out means that
+you're giving up keeping the linked list of record history, so don't do
+that unless you have a very good reason.)
+
+=over 8
+
+=item indicator
+
+The indicator parameter specifies the single-character record
+indicators that appear in each record preamble.  This parameter has the
+following form: C<indicator=length-5CharacterString>,
+e.g.,
+
+    indicator=1-+#=*-
+
+The length is always 1.  The five characters represent the five states
+of a record in the data store (in this order):
+
+    create(+): the record has not changed since being added
+    oldupd(#): the record was updated, and this entry is an old version
+    update(=): this entry is the updated version of a record
+    olddel(*): the record was deleted, and this entry is the old version
+    delete(-): the record is deleted, and this entry is the "delete record"
+
+(The reason for a "delete record" is for storing information about the
+delete process, such has when it was deleted and by whom.)
+
+The five characters shown in the example are the ones used by all
+examples in the documentation.  You're free to use your own characters,
+but the length must always be 1.
+
+=item transind
+
+The transind parameter describes the single-character transaction
+indicators that appear in each record preamble.  This parameter has the
+same format and meanings as the indicator parameter, e.g.,
+
+    transind=1-+#=*-
+
+(Note that only three of these are used, but all five must be given and
+must match the indicator parameter.)
+
+The three characters that are used are create(+), update(=), and
+delete(-).  While the record indicators will change, e.g., from create
+to oldupd, or from update to olddel, etc., the transaction indicators
+never change from their original values.  So a transaction that created
+a record will always have the create value, and the same for update and
+delete.
+
+=item date
+
+The date parameter specifies how the transaction date is stored in the
+preamble.  It has the form: C<date=length-format>, e.g.,
+
+    date=8-yyyymmdd
+    date=4-yymd
+
+The example shows the two choices for length: 4 or 8.  When the length
+is 8, the format must contain 'yyyy', 'mm', and 'dd' in some order.
+When the length is 4, the format must contain 'yy', 'm', and 'd' in
+some order, e.g.,
+
+    date=8-mmddyyyy, date=8-ddmmyyyy, etc.
+    date=4-mdyy, date=4-dmyy, etc.
+
+When the length is 8, the year, month, and day are stored as decimal
+numbers, e.g., '20100615' for June, 15, 2010.  When the length is 4,
+they are stored as base62 numbers, e.g. 'WQ6F' (yymd) for June 15,
+2010.
+
+=item transnum
+
+The transnum parameter specifies how the transaction number is stored
+in the preamble.  It has the form: C<transnum=length-base>,
+e.g.,
+
+    transnum=4-62
+
+The example says the number is stored as a four-digit base62 integer.
+The highest transaction number this allows is 'zzzz' base62 which is
+14,776,335 decimal.  Therefore, the datastore will accommodate up to
+that many transactions (creates, updates, deletes).
+
+=item keynum
+
+The keynum parameter specifies how the record sequence number is stored
+in the preamble.  It has the form: C<keynum=length-base>,
+e.g.,
+
+    keynum=4-62
+
+As with the transnum example above, the keynum would be stored as a
+four-digit base62 integer, and the highest record sequence number
+allowed would be 14,776,335 ('zzzz' base62).  Therefore, the data store
+could not store more than this many records.
+
+=item reclen
+
+The reclen parameter specifies how the record length is stored in the
+preamble.  It has the form: C<reclen=length-base>, e.g.,
+
+    reclen=4-62
+
+This example allows records to be up to 14,776,335 bytes long.
+
+=item thisfnum
+
+The thisfnum parameter specifies how the file numbers are stored in the
+preamble.  There are three file number parameters, thisfnum, prevfnum,
+and nextfnum.  They must match each other in length and base.  The
+parameter has the form: C<thisfnum=length-base>, e.g.,
+
+    thisfnum=2-36
+
+There is an extra constraint imposed on the file number parameters:
+they may not use a number base higher than 36.  The reason is that the
+file number appears in file names, and base36 numbers match [0-9A-Z].
+By limiting to base36, file names will therefore never differ only by
+case, e.g., there may be a file named example.Z.data, but never one
+named example.z.data.
+
+The above example states that the file numbers will be stored as
+two-digit base36 integers.  The highest file number is 'ZZ' base36,
+which is 1,295 decimal.  Therefore, the datastore will allow up to that
+many data files before filling up.  (If a datastore "fills up", it must
+be migrated to a newly configured datastore that has bigger numbers
+where needed.)
+
+In a preamble, thisfnum is the number of the datafile where the record
+is stored.  This number combined with the thisseek value and the reclen
+value gives the precise location of the record data.
+
+=item thisseek
+
+The thisseek parameter specifies how the seek positions are stored in
+the preamble.  There are three seek parameters, thisseek, prevseek, and
+nextseek.  They must match each other in length and base.  The
+parameter has the form:  C<thisseek=length-base>, e.g.,
+
+    thisseek=5-62
+
+This example states that the seek positions will be stored as
+five-digit base62 integers.  So the highest seek position is 'zzzzz'
+base62, which is 916,132,831 decimal.  Therefore, each of the
+datastore's data files may contain up to that many bytes (record data
+plus preambles).
+
+Incidentally, no record (plus its preamble) may be longer than this,
+because it just wouldn't fit in a data file.
+
+Also, the size of each data file may be further limited using the
+datamax parameter (see below).  For example, a seek value of '4-62'
+would allow datafiles up to 14,776,335 bytes long.  If you want bigger
+files, but don't want them bigger than 500 Meg, you can give
+C<thisseek=5-62> and C<datamax=500M>.
+
+=item prevfnum (optional)
+
+The prevfnum parameter specifies how the "previous" file numbers are
+stored in the preamble.  The value of this parameter must exactly match
+thisfnum (see thisfnum above for more details).  It has the form:
+C<prevfnum=length-base>, e.g.,
+
+    prevfnum=2-36
+
+In a preamble, the prevfnum is the number of the datafile where the
+previous version of the record is stored.  This number combined with
+the prevseek value gives the beginning location of the previous
+record's data.
+
+This is the first of the four "optional" preamble parameters.  If you
+don't provide this one, don't provide the other three either.  If you
+leave these off, you will not be able to get a record's history of
+changes, and you will not be able to migrate any history to a new
+datastore.
+
+So why would to not provide these?  You might have a datastore that has
+very transient data, e.g., indexes, and you don't care about change
+history.  By not including these four optional parameters, when the
+module updates a record, it will not perform the extra bit of IO to
+update a previous record's nextfnum and nextseek values.  And the
+preambles will be a little bit shorter.
+
+=item prevseek (optional)
+
+The prevseek parameter specifies how the "previous" seek positions are
+stored in the preamble.  The value of this parameter must exactly match
+thisseek (see thisseek above for more details).  It has the form
+C<prevseek=length-base>, e.g.,
+
+    prevseek=5-62
+
+=item nextfnum (optional)
+
+The nextfnum parameter specifies how the "next" file numbers are stored
+in the preamble.  The value of this parameter must exactly match
+thisfnum (see thisfnum above for more details).  It has the form:
+C<nextfnum=length-base>, e.g.,
+
+    nextfnum=2-36
+
+In a preamble, the nextfnum is the number of the datafile where the
+next version of the record is stored.  This number combined with the
+nextseek value gives the beginning location of the next record's data.
+
+You would have a nextfnum and nextseek in a preamble when it's a
+previous version of a record whose current version appears later in the
+datastore.  While thisfnum and thisseek are critical for all record
+retrievals, prevfnum, prevseek, nextfnum, and nextseek are only needed
+for getting a record's history.  They are also used during a migration
+to help validate that all the data (and transactions) were migrated
+intact.
+
+=item nextseek (optional)
+
+The nextseek parameter specifies how the "next" seek positions are
+stored in the preamble.  The value of this parameter must exactly match
+thisseek (see thisseek above for more details).  It has the form
+C<nextseek=length-base>, e.g.,
+
+    nextseek=5-62
+
+=item user
+
+The user parameter specifies the length and character class for
+extra user data stored in the preamble.  It has the form:
+C<user=length-CharacterClass>, e.g.,
+
+    user=8-+-~    (must match /[ -~]+ */ and not be longer than 8)
+    user=10-0-9   (must match /[0-9]+ */ and not be longer than 10)
+    user=1-:      (must be literally ':')
+
+When a record is created, the application supplies a value to store
+as "user" data.  This might be a userid, an md5 digest, multiple
+fixed-length fields -- whatever is needed or wanted.
+
+This field is required but may be preassigned using the userdata
+parameter (see below).  If no user data is provided or preassigned,
+it will default to a space.
+
+When this data is stored in the preamble, it is padded on the right
+with spaces.
+
+=back
+
+=head2 Preamble defaults
+
+All of the preamble parameters -- except user -- may be set using one
+of the defaults provided, e.g.,
+
+    http://example.com?name=example;defaults=medium;user=8-+-~
+    http://example.com?name=example;defaults=large;user=10-0-9
+
+Note that these are in a default order also.  And the user parameter
+is still part of the preamble, so you can make it appear first if you
+want, e.g.,
+
+    http://example.com?name=example;user=8-+-~;defaults=medium
+    http://example.com?name=example;user=10-0-9;defaults=large
+
+The C<_nohist> versions leave out the optional preamble parameters --
+the above caveat about record history still applies.
+
+Finally, if non of these suits, they may still be good starting points
+for defining your own preambles.
+
+=over 8
+
+=item xsmall, xsmall_nohist
+
+When the URI contains C<defaults=xsmall>, the following values are
+set:
+
+    indicator=1-+#=*-
+    transind=1-+#=*-
+    date=4-yymd
+    transnum=2-62   3,843 transactions
+    keynum=2-62     3,843 records
+    reclen=2-62     3,843 bytes/record
+    thisfnum=1-36   35 data files
+    thisseek=4-62   14,776,335 bytes/file
+    prevfnum=1-36
+    prevseek=4-62
+    nextfnum=1-36
+    nextseek=4-62
+
+The last four are not set for C<defaults=xsmall_nohist>.
+
+Rough estimates: 3800 records (or transactions), no larger than
+3800 bytes each; 517 Megs total (35 * 14.7M).
+
+=item small, small_nohist
+
+For C<defaults=small>:
+
+    indicator=1-+#=*-
+    transind=1-+#=*-
+    date=4-yymd
+    transnum=3-62   238,327 transactions
+    keynum=2-62     238,327 records
+    reclen=2-62     238,327 bytes/record
+    thisfnum=1-36   35 data files
+    thisseek=5-62   916,132,831 bytes/file
+    prevfnum=1-36
+    prevseek=5-62
+    nextfnum=1-36
+    nextseek=5-62
+
+The last four are not set for C<defaults=small_nohist>.
+
+Rough estimates: 238K records (or transactions), no larger than 238K
+bytes each; 32 Gigs total (35 * 916M).
+
+=item medium, medium_nohist
+
+For C<defaults=medium>:
+
+    indicator=1-+#=*-
+    transind=1-+#=*-
+    date=4-yymd
+    transnum=4-62   14,776,335 transactions
+    keynum=4-62     14,776,335 records
+    reclen=4-62     14,776,335 bytes/record
+    thisfnum=2-36   1,295 data files
+    thisseek=5-62   916,132,831 bytes/file
+    prevfnum=2-36
+    prevseek=5-62
+    nextfnum=2-36
+    nextseek=5-62
+
+The last four are not set for C<defaults=medium_nohist>.
+
+Rough estimates: 14.7M records (or transactions), no larger than 14.7M
+bytes each; 1 Terabyte total (1,295 * 916M).
+
+=item large, large_nohist
+
+For C<defaults=large>:
+
+    datamax=1.9G    1,900,000,000 bytes/file
+    dirmax=300
+    keymax=100_000
+    indicator=1-+#=*-
+    transind=1-+#=*-
+    date=4-yymd
+    transnum=5-62   916,132,831 transactions
+    keynum=5-62     916,132,831 records
+    reclen=5-62     916,132,831 bytes/record
+    thisfnum=3-36   46,655 data files
+    thisseek=6-62   56G per file (but see datamax)
+    prevfnum=3-36
+    prevseek=6-62
+    nextfnum=3-36
+    nextseek=6-62
+
+The last four are not set for C<defaults=large_nohist>.
+
+Rough estimates: 916M records/transactions, no larger than 916M bytes
+each; 88 Terabytes total (46,655 * 1.9G).
+
+=item xlarge, xlarge_nohist
+
+For C<defaults=xlarge>:
+
+    datamax=1.9G    1,900,000,000 bytes/file
+    dirmax=300
+    dirlev=2
+    keymax=100_000
+    tocmax=100_000
+    indicator=1-+#=*-
+    transind=1-+#=*-
+    date=4-yymd
+    transnum=6-62   56B transactions
+    keynum=6-62     56B records
+    reclen=6-62     56G per record (limited to 1.9G by datamax)
+    thisfnum=4-36   1,679,615 data files
+    thisseek=6-62   56G per file (but see datamax)
+    prevfnum=4-36
+    prevseek=6-62
+    nextfnum=4-36
+    nextseek=6-62
+
+The last four are not set for C<defaults=xlarge_nohist>.
+
+Rough estimates: 56B records/transactions, no larger than 1.9G bytes
+each; 3 Petabytes total (1,679,615 * 1.9G).
+
+=back
+
+=head2 Other required parameters
+
+=over 8
+
+=item name
+
+The name parameter identifies the datastore by name.  This name should
+be short and uncomplicated, because it is used as the root for the
+datastore's files.
+
+=item recsep
+
+The recsep parameter gives the ascii character(s) that will make up the
+record separator.  The "flat file" stategy suggests that these
+characters ought to match what your OS considers to be a "newline".
+But in fact, you could use an string of ascii characters.
+
+    recsep=%0A       (LF)
+    recsep=%0D%0A    (CR+LF)
+    recsep=%0D       (CR)
+
+    recsep=%0A---%0A (HR--sort of)
+
+Also, if you develop your data on unix with recsep=%0A and then copy it
+to a windows machine, the module will continue to use the configured
+recsep, i.e., it is not tied the to OS.
+
+=back
+
+=head2 Other optional parameters
+
+=over 8
+
+=item desc
+
+The desc parameter provides a means to give a short description (or perhaps a
+longer name) of the datastore.
+
+=item datamax
+
+The datamax parameter give the maximum number of bytes a data file may contain.
+If you don't provide a datamax, it will be computed from the thisseek value (see
+thisseek above for more details).
+
+The datamax value is simply a number, e.g.,
+
+    datamax=1000000000   (1 Gig)
+
+To make things easier to see, you can add underscores, e.g.,
+
+    datamax=1_000_000_000   (1 Gig)
+
+You can also shorten the number with an 'M' for megabytes (10**6) or a
+'G' for gigabytes (10**9), e.g.,
+
+    datamax=1000M  (1 Gig)
+    datamax=1G     (1 Gig)
+
+Finally, with 'M' or 'G', you can use fractions, e.g.
+
+    datamax=.5M  (500_000)
+    datamax=1.9G (1_900_000_000)
+
+=item keymax
+
+The keymax parameter gives the number of record keys that may be stored
+in a key file.  This simply limits the size of the key files, e.g.,
+
+    keymax=10_000
+
+The maximum bytes would be:
+
+    keymax * (preamble length + recsep length)
+
+The numeric value may use underscores and 'M' or 'G' as described above
+for datamax.
+
+=item tocmax
+
+The tocmax parameter gives the number of data file entries that may be stored
+in a toc (table of contents) file.  This simply limits the size of the toc
+files, e.g.,
+
+    tocmax=10_000
+
+Each (fairly short) line in a toc file describes a single data file, so
+you would need a tocmax only in the extreme case of a datastore with
+thousands or millions of data files.
+
+The numeric value may use underscores and 'M' or 'G' as described above
+for datamax.
+
+=item dirmax
+
+The dirmax parameter gives the number of files (and directories) that
+may be stored in a datastore directory, e.g.,
+
+    dirmax=300
+
+This allows a large number of data files (and key/toc files) to be
+created without there being too many files in a single directory.
+
+(The numeric value may use underscores and 'M' or 'G' as described above
+for datamax.)
+
+If you specify dirmax without dirlev (see below), dirlev will default
+to 1.
+
+Without dirmax and dirlev, a datastore's data files (and key/toc files)
+will reside in the same directory as the uri file, and the module will
+not limit how many you may create (though the size of your filesystem
+might).
+
+With dirmax and dirlev, these files will reside in subdirectories.
+
+Giving a value for dirmax will also limit the number of data files (and
+key/toc files) a datastore may have, by this formula:
+
+ max files = dirmax ** (dirlev + 1)
+
+So dirmax=300 and dirlev=1 would result in a limit of 90,000 data
+files.  If you go to dirlev=2, the limit becomes 27,000,000, which is
+why you're unlikely to need a dirlev greater than 2.
+
+=item dirlev
+
+The dirlev parameter gives the number of levels of directories that a
+datastore may use, e.g.,
+
+    dirlev=1
+
+You can give a dirlev without a dirmax, which would store the data
+files (and key/toc files) in subdirectories, but wouldn't limit how
+many files may be in each directory.
+
+=item userdata
+
+The userdata parameter is similar to the userdata parameter in the call
+to new().  It specifies the default value to use if the application
+does not provide a value when creating, updating, or deleting a
+record.
+
+Those provided values will override the value given in the call to new(),
+which will override the value given here in the uri.
+
+If you don't specify a default value here or in the call to new(), the
+value defaults to a space (which may then be padded with more spaces).
+
+    userdata=:
+
+The example is contrived for a hypothetical datastore that doesn't need
+this field.  Since the field is required, the above setting will always
+store a colon (and the user parameter might be C<user=1-:>).
+
+=back
+
 =head1 CAVEATS
 
-This module is still in an experimental state.  The tests and pod are
-sparse.  When I start using it in production, I'll up the version to
-1.00.
+This module is still in an experimental state.  The tests are sparse.
+When I start using it in production, I'll bump the version to 1.00.
 
 Until then (afterwards, too) please use with care.
-
-=head1 TODO
-
- - iteration
- - cgi to analyze data store configuation (for uri to point to)
- - more tests
- - more pod
 
 =head1 AUTHOR
 
@@ -1648,7 +2424,7 @@ Brad Baxter, E<lt>bbaxter@cpan.orgE<gt>
 
 =head1 COPYRIGHT AND LICENSE
 
-Copyright (C) 2009 by Brad Baxter
+Copyright (C) 2010 by Brad Baxter
 
 This library is free software; you can redistribute it and/or modify
 it under the same terms as Perl itself, either Perl version 5.8.8 or,

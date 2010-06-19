@@ -12,7 +12,9 @@ file data store preamble class.
  use FlatFile::DataStore::Preamble;
 
  my $preamble = FlatFile::DataStore::Preamble->new( {
+     datastore => $ds,         # FlatFile::DataStore object
      indicator => $indicator,  # single-character crud flag
+     transind  => $transind,   # single-character crud flag
      date      => $date,       # pre-formatted date
      transnum  => $transint,   # transaction number (integer)
      keynum    => $keynum,     # record sequence number (integer)
@@ -26,18 +28,18 @@ file data store preamble class.
      user      => $user_data,  # pre-formatted user-defined data
      } );
 
- my $string = $preamble->string(); # e.g.,
+ my $string = $preamble->string();
 
- # new preamble from existing preamble string
- # e.g., something like "#WP2L000I000F00Tw1001XN1001Ha100228Test      "
-
- my $clone = FlatFile::DataStore::Preamble->new( { string => $string } );
+ my $clone = FlatFile::DataStore::Preamble->new( {
+     datastore => $ds,
+     string    => $string
+     } );
 
 =head1 DESCRIPTION
 
 FlatFile::DataStore::Preamble - Perl module that implements a flat file
 data store preamble class.  This class defines objects used by
-FlatFile::DataStore::Record and FlatFile::DataStore.  So you will
+FlatFile::DataStore::Record and FlatFile::DataStore.  You will
 probably not ever call new() yourself, but you might call some of the
 accessors either directly or via a FF::DS::Record object;
 
@@ -48,11 +50,11 @@ record.
 
 =head1 VERSION
 
-FlatFile::DataStore::Preamble version 0.10
+FlatFile::DataStore::Preamble version 0.11
 
 =cut
 
-our $VERSION = '0.10';
+our $VERSION = '0.11';
 
 use 5.008003;
 use strict;
@@ -68,10 +70,11 @@ my %Generated = qw(
 
 my %Attrs = ( %Generated, qw(
     indicator 1
+    transind  1
     date      1
+    transnum  1
     keynum    1
     reclen    1
-    transnum  1
     thisfnum  1
     thisseek  1
     prevfnum  1
@@ -92,7 +95,7 @@ my $Ascii_chars = qr/^[ -~]+$/;
 Constructs a new FlatFile::DataStore::Preamble object.
 
 The parm C<$parms> is a hash reference containing key/value pairs to
-populate the preamble string.  If there is a C<$parms->{'string'}>
+populate the preamble string.  If there is a C<< $parms->{'string'} >>
 value, it will be parsed into fields and the resulting key/value pairs
 will replace the C<$parms> hash reference.
 
@@ -118,7 +121,9 @@ sub init {
         $parms = $datastore->burst_preamble( $string );
     }
 
-    my $crud   = $datastore->crud();
+    my $crud = $datastore->crud();
+    $self->crud( $crud );
+
     my $create = $crud->{'create'};
     my $update = $crud->{'update'};
     my $delete = $crud->{'delete'};
@@ -126,8 +131,10 @@ sub init {
     my $olddel = $crud->{'olddel'};
 
     my $indicator = $parms->{'indicator'} || croak "Missing indicator";
-
     $self->indicator( $indicator );
+
+    my $transind = $parms->{'transind'} || croak "Missing transind";
+    $self->transind( $transind );
 
     my $string = "";
     for my $href ( $datastore->specs() ) {  # each field is href of aref
@@ -136,7 +143,7 @@ sub init {
         my $value               = $parms->{ $field };
 
         for( $field ) {
-            if( /indicator/ ) {
+            if( /indicator/ or /transind/ ) {
                 croak qq'Missing value for "$_"' unless defined $value;
                 croak qq'Invalid value for "$_" ($value)' unless length $value == $len;
 
@@ -147,15 +154,20 @@ sub init {
                 croak qq'Missing value for "$_"' unless defined $value;
                 croak qq'Invalid value for "$_" ($value)' unless length $value == $len;
 
-                $self->{ $_ } = $datastore->then( $value, $parm );
+                $self->{ $_ } = then( $value, $parm );
                 $string      .= $value;
             }
             elsif( /user/ ) {
-                croak qq'Missing value for "$_"' unless defined $value;
-                croak qq'Invalid value for "$_" ($value)' unless $value =~ $Ascii_chars;
+                unless( defined $value ) {
+                    $value = $datastore->userdata;
+                    croak qq'Missing value for "$_"' unless defined $value;
+                }
 
                 my $try = sprintf "%-${len}s", $value;  # pads with blanks
                 croak qq'Value of "$_" ($try) too long' if length $try > $len;
+
+                my $user_regx = qr/^[$parm]+ *$/;  # $parm chars already escaped as needed
+                croak qq'Invalid value for "$_" ($value)' unless $try =~ $user_regx;
 
                 $self->{ $_ } = $value;
                 $string      .= $try;
@@ -197,19 +209,21 @@ sub init {
 The following methods set and return their respective attribute values
 if C<$value> is given.  Otherwise, they just return the value.
 
- $preamble->string(    [$value] ); # full preamble string
- $preamble->indicator( [$value] ); # single-character crud indicator
- $preamble->date(      [$value] ); # date as YYYY-MM-DD
- $preamble->keynum(    [$value] ); # record sequence number (integer)
- $preamble->reclen(    [$value] ); # record length (integer)
- $preamble->transnum(  [$value] ); # transaction number (integer)
- $preamble->thisfnum(  [$value] ); # file number (in base format)
- $preamble->thisseek(  [$value] ); # seek position (integer)
- $preamble->prevfnum(  [$value] ); # ditto these ...
- $preamble->prevseek(  [$value] ); # 
- $preamble->nextfnum(  [$value] ); # 
- $preamble->nextseek(  [$value] ); # 
- $preamble->user(      [$value] ); # pre-formatted user-defined data
+ $preamble->string(    $value ); # full preamble string
+ $preamble->indicator( $value ); # single-character crud indicator
+ $preamble->transind(  $value ); # single-character crud indicator
+ $preamble->date(      $value ); # date as YYYY-MM-DD
+ $preamble->transnum(  $value ); # transaction number (integer)
+ $preamble->keynum(    $value ); # record sequence number (integer)
+ $preamble->reclen(    $value ); # record length (integer)
+ $preamble->thisfnum(  $value ); # file number (in base format)
+ $preamble->thisseek(  $value ); # seek position (integer)
+ $preamble->prevfnum(  $value ); # ditto these ...
+ $preamble->prevseek(  $value ); # 
+ $preamble->nextfnum(  $value ); # 
+ $preamble->nextseek(  $value ); # 
+ $preamble->user(      $value ); # pre-formatted user-defined data
+ $preamble->crud(      $value ); # hash ref of all crud indicators
 
 Note: the class code uses these accessors to set values in the object
 as it is assembling the preamble string in new().  Unless you have a
@@ -224,6 +238,8 @@ only use them for reading.
 
 sub string    {for($_[0]->{string}    ){$_=$_[1]if@_>1;return$_}}
 sub indicator {for($_[0]->{indicator} ){$_=$_[1]if@_>1;return$_}}
+sub transind  {for($_[0]->{transind}  ){$_=$_[1]if@_>1;return$_}}
+sub crud      {for($_[0]->{crud}      ){$_=$_[1]if@_>1;return$_}}
 sub date      {for($_[0]->{date}      ){$_=$_[1]if@_>1;return$_}}
 sub user      {for($_[0]->{user}      ){$_=$_[1]if@_>1;return$_}}
 
@@ -237,6 +253,63 @@ sub prevseek  {for($_[0]->{prevseek}  ){$_=0+$_[1]if@_>1;return$_}}
 sub nextfnum  {for($_[0]->{nextfnum}  ){$_=  $_[1]if@_>1;return$_}}
 sub nextseek  {for($_[0]->{nextseek}  ){$_=0+$_[1]if@_>1;return$_}}
 
+#---------------------------------------------------------------------
+
+=head2 Convenience methods
+
+=head3 is_created(), is_updated(), is_deleted();
+
+These methods and return true if the indicator
+matches the value implied by the method name, e.g.,
+
+ print "Deleted!" if $preamble->is_deleted();
+
+=cut
+
+sub is_created {
+    my $self = shift;
+    $self->indicator eq $self->crud->{'create'};
+}
+sub is_updated {
+    my $self = shift;
+    $self->indicator eq $self->crud->{'update'};
+}
+sub is_deleted {
+    my $self = shift;
+    $self->indicator eq $self->crud->{'delete'};
+}
+
+#---------------------------------------------------------------------
+# then(), translates stored date to YYYY-MM-DD
+#     Takes a date and a format and returns the date as yyyy-mm-dd.
+#     If the format contains 'yyyy' it is assumed to have decimal
+#     values for month, day, year.  Otherwise, it is assumed to have
+#     base62 values for them.
+#
+# Private method.
+
+sub then {
+    my( $date, $format ) = @_;
+    my( $y, $m, $d );
+    my $ret;
+    for( $format ) {
+        if( /yyyy/ ) {  # decimal year/month/day
+            $y = substr $date, index( $format, 'yyyy' ), 4;
+            $m = substr $date, index( $format, 'mm'   ), 2;
+            $d = substr $date, index( $format, 'dd'   ), 2;
+        }
+        else {  # assume base62 year/month/day
+            $y = substr $date, index( $format, 'yy' ), 2;
+            $m = substr $date, index( $format, 'm'  ), 1;
+            $d = substr $date, index( $format, 'd'  ), 1;
+            $y = sprintf "%04d", base2int( $y, 62 );
+            $m = sprintf "%02d", base2int( $m, 62 );
+            $d = sprintf "%02d", base2int( $d, 62 );
+        }
+    }
+    return "$y-$m-$d";
+}
+
 __END__
 
 =head1 AUTHOR
@@ -245,7 +318,7 @@ Brad Baxter, E<lt>bbaxter@cpan.orgE<gt>
 
 =head1 COPYRIGHT AND LICENSE
 
-Copyright (C) 2009 by Brad Baxter
+Copyright (C) 2010 by Brad Baxter
 
 This library is free software; you can redistribute it and/or modify
 it under the same terms as Perl itself, either Perl version 5.8.8 or,

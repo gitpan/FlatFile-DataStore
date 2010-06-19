@@ -4,21 +4,25 @@
 
 =head1 NAME
 
-FlatFile::DataStore::Toc - Perl module that implements a flat file data
-store TOC (table of contents) class.
+FlatFile::DataStore::Toc - Perl module that implements a flat file
+data store TOC (table of contents) class.
 
 =head1 SYNOPSYS
 
  use FlatFile::DataStore::Toc;
  my $toc;
 
- $toc = FlatFile::DataStore::Toc->new( { int => 10,
-     datastore => $datastore_obj } );
+ $toc = FlatFile::DataStore::Toc->new(
+     { int       => 10,
+       datastore => $datastore_obj
+     } );
 
  # or
 
- $toc = FlatFile::DataStore::Toc->new( { num => "A",
-     datastore => $datastore_obj } );
+ $toc = FlatFile::DataStore::Toc->new(
+     { num       => "A",               # same as int=>10
+       datastore => $datastore_obj
+     } );
 
 =head1 DESCRIPTION
 
@@ -30,11 +34,11 @@ any of it's methods yourself.
 
 =head1 VERSION
 
-FlatFile::DataStore::Toc version 0.10
+FlatFile::DataStore::Toc version 0.11
 
 =cut
 
-our $VERSION = '0.10';
+our $VERSION = '0.11';
 
 use 5.008003;
 use strict;
@@ -65,17 +69,17 @@ my %Attrs = qw(
 
 =head2 FlatFile::DataStore::Toc->new( $parms )
 
-Constructs a new FlatFile::DataStore::Toc object.
+Constructs a new FlatFile::DataStore::Toc object from a toc record
+string in a tocfile.
 
-The parm C<$parms> is a hash reference containing key/value pairs to
-populate the record string.  Three keys are recognized:
+The parm C<$parms> is a hash reference containing these required keys:
 
- - datastore, data store object (required) and one of:
- - int, data file number as integer, will load object from tocfile
-   or
- - num, data file number as number in number base, will load from tocfile
+ - datastore ... data store object, and one of:
+ - int ... data file number as integer, or
+ - num ... data file number as number in number base
 
-An C<int> or C<num> of 0 will load the first (totals) line from tocfile
+An C<int> or C<num> of 0 will load the first (totals) line from the
+tocfile.
 
 =cut
 
@@ -91,6 +95,8 @@ sub new {
 
 #---------------------------------------------------------------------
 # init(), called by new() to parse the parms
+#
+# Private method.
 
 sub init {
     my( $self, $parms ) = @_;
@@ -106,7 +112,8 @@ sub init {
     else {
         croak qq/Missing parms 'int' or 'num'./; }
 
-    my $string = $self->read_toc( $datafint );
+    my $sref = $self->read_toc( $datafint );
+    my $string = $sref? $$sref: '';
 
     unless( $string ) {
         $self->datafnum( $datafint );
@@ -141,11 +148,18 @@ sub init {
 
 =head1 OBJECT METHODS
 
+=head2 to_string()
+
+Returns the toc object as a string, appropriate for writing back to
+the tocfile.
+
 =cut
 
 #---------------------------------------------------------------------
 sub to_string {
     my( $self ) = @_;
+
+    return unless $self->keynum > -1;  # empty data store
 
     my $ds = $self->datastore;
 
@@ -168,7 +182,16 @@ sub to_string {
 }
 
 #---------------------------------------------------------------------
-# seekpos if tocmax, e.g., tocmax=3, fint=7, toclen=4
+# read_toc()
+#     Takes an integer which denotes which datafile we want a toc
+#     record for.  It reads the appropriate line from a tocfile and
+#     returns the record as a string.
+#
+# Private method.
+
+# Case study illustrating the logic in the routine.
+#
+# seekpos if there's a tocmax, e.g., tocmax=3, fint=7, toclen=4
 #
 # 1: 0   xxxx     skip    = int( fint / tocmax )
 #    1   xxxx             = int(    7    /   3    )
@@ -202,6 +225,14 @@ sub read_toc {
 }
 
 #---------------------------------------------------------------------
+# write_toc()
+#     Takes an integer which denotes which datafile we want a toc
+#     record for.  opens the appropriate tocfile, seeks to the
+#     appropriate line and writes the Toc object as a string.
+#     Uses logic similar to read_toc().
+#
+# Private method.
+
 sub write_toc {
     my( $self, $fint ) = @_;
 
@@ -217,11 +248,19 @@ sub write_toc {
     else {
         $seekpos = $toclen * $fint; }
 
-    return $ds->write_bytes( $tocfh, $seekpos, $self->to_string );
+    return $ds->write_bytes( $tocfh, $seekpos, \($self->to_string) );
 }
 
 #---------------------------------------------------------------------
 # toc_getfnum(), called by tocfile() and init()
+#     Takes an integer which denotes which datafile we want a toc
+#     record for.  Calculates the tocfile file number where that
+#     record should be found and returns the file number as an
+#     integer.  In list context, returns both the integer and the
+#     number in the C<fnumbase>.
+#    
+# Private method.
+
 sub toc_getfnum {
     my( $self, $fint ) = @_;
 
@@ -244,6 +283,13 @@ sub toc_getfnum {
 }
 
 #---------------------------------------------------------------------
+# tocfile()
+#     Takes an integer which denotes which datafile we want a toc
+#     record for.  Returns the path of the tocfile where that record
+#     should be found.
+#    
+# Private method.
+
 sub tocfile {
     my( $self, $fint ) = @_;
 
@@ -267,12 +313,15 @@ sub tocfile {
             $path = $path? "$dirnum/$path": $dirnum;
             $this = $dirint;
         }
-        $path = "$name/toc$path";
+        $path = $ds->dir . "/$name/toc$path";
         mkpath( $path ) unless -d $path;
         $tocfile = "$path/$tocfile";
     }
+    else {
+        $tocfile = $ds->dir . "/$tocfile";
+    }
 
-    return $ds->dir . "/$tocfile";
+    return $tocfile;
 }
 
 #---------------------------------------------------------------------
@@ -305,6 +354,8 @@ respective bases).
 =cut
 
 sub datastore {for($_[0]->{datastore} ){$_=$_[1]if@_>1;return$_}}
+sub string    {for($_[0]->{string}    ){$_=$_[1]if@_>1;return$_}}
+
 sub datafnum  {for($_[0]->{datafnum}  ){$_=$_[1]if@_>1;return$_}}
 sub keyfnum   {for($_[0]->{keyfnum}   ){$_=$_[1]if@_>1;return$_}}
 sub tocfnum   {for($_[0]->{tocfnum}   ){$_=$_[1]if@_>1;return$_}}
@@ -316,7 +367,6 @@ sub oldupd    {for($_[0]->{oldupd}    ){$_=$_[1]if@_>1;return$_}}
 sub update    {for($_[0]->{update}    ){$_=$_[1]if@_>1;return$_}}
 sub olddel    {for($_[0]->{olddel}    ){$_=$_[1]if@_>1;return$_}}
 sub delete    {for($_[0]->{delete}    ){$_=$_[1]if@_>1;return$_}}
-sub string    {for($_[0]->{string}    ){$_=$_[1]if@_>1;return$_}}
 
 __END__
 
@@ -326,7 +376,7 @@ Brad Baxter, E<lt>bbaxter@cpan.orgE<gt>
 
 =head1 COPYRIGHT AND LICENSE
 
-Copyright (C) 2009 by Brad Baxter
+Copyright (C) 2010 by Brad Baxter
 
 This library is free software; you can redistribute it and/or modify
 it under the same terms as Perl itself, either Perl version 5.8.8 or,
