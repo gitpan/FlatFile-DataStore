@@ -63,4 +63,6 @@ for( my $i = 0; $i < 2; $i++ ) {
     is( ${$rec->data}, ${$recs[$i]->data}, "medium_nohist rec data" );
 }
 
+$ds->close_files;
+
 }

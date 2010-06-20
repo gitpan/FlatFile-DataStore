@@ -165,3 +165,7 @@ is( "$value", "$preamble", "preamble()" );
 
 
 }
+
+$ds->close_files;
+
+__END__

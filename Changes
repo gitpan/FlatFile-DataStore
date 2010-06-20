@@ -1,5 +1,8 @@
 Revision history for Perl extension FlatFile::DataStore.
 
+0.14 Sun Jun 20 06:53:53 EDT 2010
+    - close files in tests to avoid deadlocks
+
 0.13 Sat Jun 19 07:27:25 EDT 2010
     - minor repair in MANIFEST
 

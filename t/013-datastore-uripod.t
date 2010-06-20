@@ -58,6 +58,7 @@ my $desc = "Example FlatFile::DataStore";
 
 ok( $datastore, "uri configuration" );
 
+$datastore->close_files;
 
  my $ds = FlatFile::DataStore::->new(
      { dir  => $dir,
@@ -65,6 +66,8 @@ ok( $datastore, "uri configuration" );
      } );
 
 ok( $ds, "new(dir,name)" );
+
+$ds->close_files;
 
 }
 

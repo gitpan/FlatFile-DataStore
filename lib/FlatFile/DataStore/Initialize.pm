@@ -22,7 +22,7 @@ FlatFile::DataStore class.
 
 =head1 VERSION
 
-FlatFile::DataStore::Initialize version 0.13
+FlatFile::DataStore::Initialize version 0.14
 
 =cut
 

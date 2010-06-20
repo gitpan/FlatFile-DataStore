@@ -50,7 +50,7 @@ record.
 
 =head1 VERSION
 
-FlatFile::DataStore::Preamble version 0.13
+FlatFile::DataStore::Preamble version 0.14
 
 =cut
 
@@ -259,8 +259,8 @@ sub nextseek  {for($_[0]->{nextseek}  ){$_=0+$_[1]if@_>1;return$_}}
 
 =head3 is_created(), is_updated(), is_deleted();
 
-These methods and return true if the indicator
-matches the value implied by the method name, e.g.,
+These methods return true if the indicator matches the value implied by
+the method name, e.g.,
 
  print "Deleted!" if $preamble->is_deleted();
 

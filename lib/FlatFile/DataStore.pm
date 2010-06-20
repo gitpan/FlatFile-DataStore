@@ -48,7 +48,7 @@ create (store) a new record, it is appended to the flat file.  When you
 update an existing record, the existing entry in the flat file is
 flagged as updated, and the updated record is appended to the flat
 file.  When you delete a record, the existing entry is flagged as
-deleted, and a I<deleted> record is I<appended> to the flat file.
+deleted, and a I<"deleted record"> is I<appended> to the flat file.
 
 The result is that all versions of a record are retained in the data
 store, and running a history will return all of them.  Another result
@@ -75,11 +75,11 @@ See FlatFile::DataStore::Tiehash for a tied interface.
 
 =head1 VERSION
 
-FlatFile::DataStore version 0.13
+FlatFile::DataStore version 0.14
 
 =cut
 
-our $VERSION = '0.13';
+our $VERSION = '0.14';
 
 use 5.008003;
 use strict;
@@ -190,6 +190,15 @@ or pass the URI as the value of the C<uri> parameter, e.g.,
      } );
 
 (See URI Configuration below.)
+
+Also accepts a C<userdata> parameter, which sets the default user
+data for this instance of the data store, e.g.,
+
+ my $ds = FlatFile::DataStore->new(
+     { dir  => $dir,
+       name => $name,
+       userdata => ':',
+     } );
 
 Returns a reference to the FlatFile::DataStore object.
 
@@ -509,6 +518,12 @@ Retrieves a record.  The parm C<$num> may be one of
 
 The parm C<$pos> is required if C<$num> is a file number.
 
+Here's why: When $num is a record key sequence number (key number), a
+preamble is retrieved from the data store key file.  In that preamble
+is the file number and seek position where the record data may be
+gotten.  Otherwise, when $num is a file number, the application (you)
+must supply the seek position into that file.
+
 Returns a Flatfile::DataStore::Record object.
 
 =cut
@@ -605,7 +620,7 @@ Returns a Flatfile::DataStore::Record object.
 Note: the record data (but not user data) is stored in the FF::DS::Record
 object as a scalar reference.  This is done for efficiency in the cases
 where the record data may be very large.  Likewise, the first parm to
-create() is allowed to be a scalar reference.
+update() is allowed to be a scalar reference.
 
 =cut
 
@@ -755,7 +770,7 @@ Returns a Flatfile::DataStore::Record object.
 Note: the record data (but not user data) is stored in the FF::DS::Record
 object as a scalar reference.  This is done for efficiency in the cases
 where the record data may be very large.  Likewise, the first parm to
-create() is allowed to be a scalar reference.
+delete() is allowed to be a scalar reference.
 
 =cut
 
@@ -985,9 +1000,10 @@ An 'omap' is an ordered hash as defined in
 
  http://yaml.org/type/omap.html
 
-That is, it's an array of single-key hashes.  This ordered hash
-contains the specifications for constructing and parsing a record
-preamble as defined in the name.uri file.
+and implemented here using Data::Omap.  That is, it's an array of
+single-key hashes.  This ordered hash contains the specifications for
+constructing and parsing a record preamble as defined in the name.uri
+file.
 
 =cut
 
@@ -1014,7 +1030,8 @@ otherwise just returns the value.
 
 If C<$dir> is given and is a null string, the C<dir> object attribute
 is removed from the object.  If C<$dir> is not null, the directory
-must already exist.
+must already exist.  In other words, this module will not create the
+directory where the database is to be stored.
 
 =cut
 
@@ -1089,10 +1106,11 @@ if C<$value> is given.  Otherwise, they just return the value.
 
 =head2 Accessors for optional attributes
 
- $ds->dirmax( [$value] );  # maximum files in a directory
- $ds->dirlev( [$value] );  # number of directory levels
- $ds->tocmax( [$value] );  # maximum toc entries
- $ds->keymax( [$value] );  # maximum key entries
+ $ds->dirmax(   [$value] );  # maximum files in a directory
+ $ds->dirlev(   [$value] );  # number of directory levels
+ $ds->tocmax(   [$value] );  # maximum toc entries
+ $ds->keymax(   [$value] );  # maximum key entries
+ $ds->userdata( [$value] );  # default user data
 
 If no C<dirmax>, directories will keep being added to.
 
@@ -1104,6 +1122,8 @@ indefinitely.
 
 If no C<keymax>, there will be only one key file, which will grow
 indefinitely.
+
+If no C<userdata>, will default to '' unless supplied another way.
 
 =cut
 
@@ -1426,7 +1446,7 @@ sub lastkeynum {
 
 =head2 nextkeynum()
 
-Returns lastkeynum()+1 (a convenience method).  This would be useful
+Returns lastkeynum()+1 (a convenience method).  This could be useful
 for adding a new record to a hash tied to a data store, e.g.,
 
     $h{ $ds->nextkeynum } = "New record data.";
@@ -1833,14 +1853,12 @@ we need, so I chose that approach.
 
 The examples all show a URL, because I thought it would be a nice touch
 to be able to visit the URL and have the page tell you things about the
-data store.  This is what the utils/flatfile-datastore.cgi program is
+data store.  This is what the C<utils/flatfile-datastore.cgi> program is
 intended to do, but it is in a very young/rough state so far.
 
 Following are the URI configuration parameters.  The order of the
 preamble parameters I<does> matter: that's the order those fields will
 appear in each record preamble.  Otherwise the order doesn't matter.
-
-Where needed, parameter values may be uri-escaped, e.g., %20 for space.
 
 Parameter values should be percent-encoded (uri escaped).  Use %20 for
 space (don't be tempted to use '+').  Use URI::Escape::uri_escape , if
@@ -2017,7 +2035,7 @@ Incidentally, no record (plus its preamble) may be longer than this,
 because it just wouldn't fit in a data file.
 
 Also, the size of each data file may be further limited using the
-datamax parameter (see below).  For example, a seek value of '4-62'
+datamax parameter (see below).  For example, a seek value of C<4-62>
 would allow datafiles up to 14,776,335 bytes long.  If you want bigger
 files, but don't want them bigger than 500 Meg, you can give
 C<thisseek=5-62> and C<datamax=500M>.
@@ -2094,7 +2112,7 @@ The user parameter specifies the length and character class for
 extra user data stored in the preamble.  It has the form:
 C<user=length-CharacterClass>, e.g.,
 
-    user=8-+-~    (must match /[ -~]+ */ and not be longer than 8)
+    user=8-%20-~  (must match /[ -~]+ */ and not be longer than 8)
     user=10-0-9   (must match /[0-9]+ */ and not be longer than 10)
     user=1-:      (must be literally ':')
 
@@ -2104,7 +2122,7 @@ fixed-length fields -- whatever is needed or wanted.
 
 This field is required but may be preassigned using the userdata
 parameter (see below).  If no user data is provided or preassigned,
-it will default to a space.
+it will default to a null string (which will be padded with spaces).
 
 When this data is stored in the preamble, it is padded on the right
 with spaces.
@@ -2116,20 +2134,20 @@ with spaces.
 All of the preamble parameters -- except user -- may be set using one
 of the defaults provided, e.g.,
 
-    http://example.com?name=example;defaults=medium;user=8-+-~
+    http://example.com?name=example;defaults=medium;user=8-%20-~
     http://example.com?name=example;defaults=large;user=10-0-9
 
 Note that these are in a default order also.  And the user parameter
 is still part of the preamble, so you can make it appear first if you
 want, e.g.,
 
-    http://example.com?name=example;user=8-+-~;defaults=medium
+    http://example.com?name=example;user=8-%20-~;defaults=medium
     http://example.com?name=example;user=10-0-9;defaults=large
 
 The C<_nohist> versions leave out the optional preamble parameters --
 the above caveat about record history still applies.
 
-Finally, if non of these suits, they may still be good starting points
+Finally, if none of these suits, they may still be good starting points
 for defining your own preambles.
 
 =over 8
@@ -2223,7 +2241,7 @@ For C<defaults=large>:
 
 The last four are not set for C<defaults=large_nohist>.
 
-Rough estimates: 916M records/transactions, no larger than 916M bytes
+Rough estimates: 916B records/transactions, no larger than 916M bytes
 each; 88 Terabytes total (46,655 * 1.9G).
 
 =item xlarge, xlarge_nohist
@@ -2270,7 +2288,7 @@ datastore's files.
 The recsep parameter gives the ascii character(s) that will make up the
 record separator.  The "flat file" stategy suggests that these
 characters ought to match what your OS considers to be a "newline".
-But in fact, you could use an string of ascii characters.
+But in fact, you could use any string of ascii characters.
 
     recsep=%0A       (LF)
     recsep=%0D%0A    (CR+LF)
@@ -2291,7 +2309,7 @@ recsep, i.e., it is not tied the to OS.
 =item desc
 
 The desc parameter provides a means to give a short description (or perhaps a
-longer name) of the datastore.
+longer name) for the datastore.
 
 =item datamax
 
@@ -2401,7 +2419,8 @@ Those provided values will override the value given in the call to new(),
 which will override the value given here in the uri.
 
 If you don't specify a default value here or in the call to new(), the
-value defaults to a space (which may then be padded with more spaces).
+value defaults to a null string (which may then be padded with more
+spaces).
 
     userdata=:
 

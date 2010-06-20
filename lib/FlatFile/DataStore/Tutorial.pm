@@ -2,14 +2,14 @@
 
 =head1 NAME
 
-(This is still just a stub.  See also FlatFile::DataStore::FMTEYEWTK.)
-
 FlatFile::DataStore::Tutorial - POD containing in-depth discussion
 of and tutorials for using FlatFile::DataStore.
 
+(This is still just a stub.  See also FlatFile::DataStore::FMTEYEWTK.)
+
 =head1 VERSION
 
-Discusses FlatFile::DataStore version 0.13.
+Discusses FlatFile::DataStore version 0.14.
 
 =head1 SYNOPSYS
 

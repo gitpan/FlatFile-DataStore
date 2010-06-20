@@ -108,7 +108,7 @@ saves you from having to do something like this equivalent code:
  
 =head1 VERSION
 
-FlatFile::DataStore::Tiehash version 0.13
+FlatFile::DataStore::Tiehash version 0.14
 
 =cut
 

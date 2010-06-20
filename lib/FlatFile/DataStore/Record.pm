@@ -49,7 +49,7 @@ likely call the accessors.
 
 =head1 VERSION
 
-FlatFile::DataStore::Record version 0.13
+FlatFile::DataStore::Record version 0.14
 
 =cut
 

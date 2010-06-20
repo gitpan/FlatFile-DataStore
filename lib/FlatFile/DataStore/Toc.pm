@@ -34,7 +34,7 @@ any of it's methods yourself.
 
 =head1 VERSION
 
-FlatFile::DataStore::Toc version 0.13
+FlatFile::DataStore::Toc version 0.14
 
 =cut
 
