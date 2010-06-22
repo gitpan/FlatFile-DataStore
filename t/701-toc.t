@@ -178,6 +178,4 @@ ok( $ds, "FlatFile::DataStore->new()" );
 }
 
 
-$ds->close_files;
-
 __END__

@@ -62,7 +62,4 @@ for( my $i = 0; $i < 2; $i++ ) {
     my $rec = $ds->retrieve( $i );
     is( ${$rec->data}, ${$recs[$i]->data}, "large rec data" );
 }
-
-$ds->close_files;
-
 }

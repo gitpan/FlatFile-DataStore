@@ -53,8 +53,6 @@ my $desc = "Example FlatFile::DataStore";
      } );
 
 ok( $ds, "new(dir,name,uri)" );
-
-    $ds->close_files;
 }
 {
 
@@ -64,7 +62,5 @@ ok( $ds, "new(dir,name,uri)" );
      } );
 
 ok( $ds, "new(dir,name)" );
-
-    $ds->close_files;
 }
 

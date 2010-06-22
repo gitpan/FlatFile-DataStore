@@ -196,6 +196,4 @@ my $msg = "Deleted!" if $preamble->is_deleted();
 
 is( $msg, "Deleted!", "is_deleted()" );
 
-$ds->close_files;
-
 }

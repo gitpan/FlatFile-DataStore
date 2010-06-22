@@ -24,11 +24,11 @@ FlatFile::DataStore data stores.
 
 =head1 VERSION
 
-VERSION: 0.14
+VERSION: 0.15
 
 =cut
 
-our $VERSION = '0.14';
+our $VERSION = '0.15';
 
 #---------------------------------------------------------------------
 
@@ -170,7 +170,7 @@ sub validate {
         }
 
     }
-    close $histfh;
+    close $histfh or die "Can't close $histfile: $!";
 
     # parse data files and build
     #     transaction file for comparing after migrate, and
@@ -236,10 +236,11 @@ sub validate {
 
             $seekpos += $recseplen;
         }
-    }
-    close $transfh;
-    close $md5fh;
 
+        close $datafh or die "Can't close $datafile: $!";
+    }
+    close $transfh or die "Can't close $transfile: $!";
+    close $md5fh   or die "Can't close $md5file: $!";;
 }
 
 #---------------------------------------------------------------------
@@ -410,6 +411,8 @@ sub migrate {
 
             $seekpos += $from_recseplen;
         }
+
+        close $datafh or die "Can't close $datafile: $!";
     }
 }
 
@@ -504,6 +507,7 @@ sub migrate_nohist {
             $to_keynum++;
         }
     }
+    close $nohistfh or die "Can't close $nohistfile: $!";
 }
 
 #---------------------------------------------------------------------

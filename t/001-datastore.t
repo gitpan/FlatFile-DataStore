@@ -104,8 +104,6 @@ my $desc = "Example FlatFile::DataStore";
     is( Dumper($ds->specs),
         "{'indicator' => [0,1,'+#=*-']}{'transind' => [1,1,'+#=*-']}{'date' => [2,8,'yyyymmdd']}{'transnum' => [10,2,'10']}{'keynum' => [12,2,'10']}{'reclen' => [14,2,'10']}{'thisfnum' => [16,1,'10']}{'thisseek' => [17,4,'10']}{'prevfnum' => [21,1,'10']}{'prevseek' => [22,4,'10']}{'nextfnum' => [26,1,'10']}{'nextseek' => [27,4,'10']}{'user' => [31,10,' -~']}",
         "specs()" );
-
-    $ds->close_files;
 }
 
 {  # crud
@@ -199,7 +197,5 @@ my $desc = "Example FlatFile::DataStore";
     $record = $ds->create( \"Apple", 'fruit' );
     is( ${$record->data}, 'Apple', "create( scalar-ref, user data )" );
     is( $record->user, 'fruit', "create( scalar-ref, user data )" );
-
-    $ds->close_files;
 }
 

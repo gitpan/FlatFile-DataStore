@@ -22,11 +22,11 @@ FlatFile::DataStore class.
 
 =head1 VERSION
 
-FlatFile::DataStore::Initialize version 0.14
+FlatFile::DataStore::Initialize version 0.15
 
 =cut
 
-our $VERSION = '0.13';
+our $VERSION = '0.15';
 
 use 5.008003;
 use strict;
@@ -386,6 +386,7 @@ sub write_file {
         else                       { croak "Unrecognized type: $type" }
     }
     else { print $fh $contents }
+    close $fh or die "Can't close $file: $!";
 }
 
 1;  # returned

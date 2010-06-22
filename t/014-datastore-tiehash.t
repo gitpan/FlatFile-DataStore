@@ -51,8 +51,6 @@ my $datastore = FlatFile::DataStore::->new( {
     ) }
 );
 
-$datastore->close_files;
-
 {
     use FlatFile::DataStore;
 
@@ -115,7 +113,5 @@ is( $dshash{ $record->keynum }->user, $user_data, "aref user data" );
 
 is( ${$dshash{ $record->keynum }->data}, $record_data, "object record data" );
 is( $dshash{ $record->keynum }->user, $user_data, "object user data" );
-
-tied(%dshash)->close_files;
 
 }

@@ -75,11 +75,11 @@ See FlatFile::DataStore::Tiehash for a tied interface.
 
 =head1 VERSION
 
-FlatFile::DataStore version 0.14
+FlatFile::DataStore version 0.15
 
 =cut
 
-our $VERSION = '0.14';
+our $VERSION = '0.15';
 
 use 5.008003;
 use strict;
@@ -156,7 +156,6 @@ my %Attrs = ( %Preamble, %Optional, %Generated, qw(
     ) );
 
 my $Ascii_chars = qr/^[ -~]+$/;  # i.e., printables
-my( %Read_fh, %Write_fh );  # inside-outish object attributes
 
 #---------------------------------------------------------------------
 
@@ -504,6 +503,9 @@ sub create {
 
     $top_toc->write_toc( 0 );
 
+    close $datafh or die "Can't close $datafile: $!";
+    close $keyfh or die "Can't close $keyfile: $!";
+
     return $record;
 }
 
@@ -551,6 +553,8 @@ sub retrieve {
         croak qq/Record doesn't exist: "$keynum"/ if $keynum > $trynum;
 
         $keystring = $self->read_preamble( $keyfh, $keyseek );
+        close $keyfh or die "Can't close $keyfile: $!";
+
         my $parms  = $self->burst_preamble( $keystring );
 
         $fnum    = $parms->{'thisfnum'};
@@ -560,6 +564,7 @@ sub retrieve {
     my $datafile = $self->which_datafile( $fnum );
     my $datafh   = $self->locked_for_read( $datafile );
     my $record   = $self->read_record( $datafh, $seekpos );
+    close $datafh or die "Can't close $datafile: $!";
 
     # if we got the record via key file, check that preambles match
     if( $keystring ) {
@@ -596,6 +601,8 @@ sub retrieve_preamble {
     croak qq/Record doesn't exist: "$keynum"/ if $keynum > $trynum;
 
     my $keystring = $self->read_preamble( $keyfh, $keyseek );
+    close $keyfh or die "Can't close $keyfile: $!";
+
     my $preamble  = $self->new_preamble( { string => $keystring } );
 
     return $preamble;
@@ -705,8 +712,14 @@ sub update {
             nextseek  => $dataseek,
             } );
         my $prevdatafile = $self->which_datafile( $prevfnum );
-        my $prevdatafh   = $self->locked_for_write( $prevdatafile );
-        $self->write_bytes( $prevdatafh, $prevseek, \$prevpreamble );
+        if( $prevdatafile eq $datafile ) {
+            $self->write_bytes( $datafh, $prevseek, \$prevpreamble );
+        }
+        else {
+            my $prevdatafh = $self->locked_for_write( $prevdatafile );
+            $self->write_bytes( $prevdatafh, $prevseek, \$prevpreamble );
+            close $prevdatafh or die "Can't close $prevdatafile: $!";
+        }
     }
 
     # update table of contents (toc) file
@@ -747,6 +760,9 @@ sub update {
     $top_toc->numrecs(  $top_toc->numrecs + 1 ) if $prevind eq $delete;
 
     $top_toc->write_toc( 0 );
+
+    close $datafh or die "Can't close $datafile: $!";
+    close $keyfh or die "Can't close $keyfile: $!";
 
     return $record;
 }
@@ -796,6 +812,7 @@ sub delete {
     # get keyfile
     # need to lock files before getting seek positions
     # want to lock keyfile before datafile
+
     my( $keyfile, $keyfint ) = $self->keyfile( $keyint );
     my $keyfh                = $self->locked_for_write( $keyfile );
     my $keyseek              = $self->keyseek( $keyint );
@@ -854,8 +871,14 @@ sub delete {
             nextseek  => $dataseek,
             } );
         my $prevdatafile = $self->which_datafile( $prevfnum );
-        my $prevdatafh   = $self->locked_for_write( $prevdatafile );
-        $self->write_bytes( $prevdatafh, $prevseek, \$prevpreamble );
+        if( $prevdatafile eq $datafile ) {
+            $self->write_bytes( $datafh, $prevseek, \$prevpreamble );
+        }
+        else {
+            my $prevdatafh = $self->locked_for_write( $prevdatafile );
+            $self->write_bytes( $prevdatafh, $prevseek, \$prevpreamble );
+            close $prevdatafh or die "Can't close $prevdatafile: $!";
+        }
     }
 
     # update table of contents (toc) file
@@ -895,6 +918,9 @@ sub delete {
     $top_toc->numrecs(  $top_toc->numrecs - 1 );
 
     $top_toc->write_toc( 0 );
+
+    close $datafh or die "Can't close $datafile: $!";
+    close $keyfh or die "Can't close $keyfile: $!";
 
     return $record;
 }
@@ -1604,47 +1630,6 @@ sub update_preamble {
 #---------------------------------------------------------------------
 
 #---------------------------------------------------------------------
-# DESTROY() supports tied and untied objects
-
-sub DESTROY {
-    my $self = shift;
-    $self->close_files;
-}
-
-#---------------------------------------------------------------------
-
-=head2 close_files()
-
-This routine will close all open files associated with the data store
-object.  This is used in DESTROY(), but could conceivably be called by
-the application if it detects too many open files.
-
- $ds->close_files();
-
-The intention is that close_files() can be called any time -- new files
-would be opened again as needed.
-
-=cut
-
-sub close_files {
-    my $self = shift;
-
-    if( my $href = $Read_fh{ $self } ) {
-        while( my( $file, $fh ) = each %$href ) {
-            close $fh or die "Can't close $file: $!";
-        }
-        delete $Read_fh{ $self };
-    }
-
-    if( my $href = $Write_fh{ $self } ) {
-        while( my( $file, $fh ) = each %$href ) {
-            close $fh or die "Can't close $file: $!";
-        }
-        delete $Write_fh{ $self };
-    }
-}
-
-#---------------------------------------------------------------------
 # locked_for_read()
 #     Takes a file name, opens it for input, locks it, and returns the
 #     open file handle.  It caches this file handle, and the cached
@@ -1655,15 +1640,11 @@ sub close_files {
 sub locked_for_read {
     my( $self, $file ) = @_;
 
-    my $open_fh = $Read_fh{ $self }{ $file };
-    return $open_fh if $open_fh;
-
     my $fh;
     open $fh, '<', $file or croak "Can't open for read $file: $!";
     flock $fh, LOCK_SH   or croak "Can't lock shared $file: $!";
     binmode $fh;
 
-    $Read_fh{ $self }{ $file } = $fh;
     return $fh;
 }
 
@@ -1679,22 +1660,12 @@ sub locked_for_read {
 sub locked_for_write {
     my( $self, $file ) = @_;
 
-    my $open_fh = $Write_fh{ $self }{ $file };
-    return $open_fh if $open_fh;
-
-    # remove possible shared lock on file
-    if( exists $Read_fh{ $self }{ $file } ) {
-        close  $Read_fh{ $self }{ $file };
-        delete $Read_fh{ $self }{ $file };
-    }
-
     my $fh;
     sysopen( $fh, $file, O_RDWR|O_CREAT ) or croak "Can't open for read/write $file: $!";
     my $ofh = select( $fh ); $| = 1; select ( $ofh );  # flush buffers
     flock $fh, LOCK_EX                    or croak "Can't lock exclusive $file: $!";
     binmode $fh;
 
-    $Write_fh{ $self }{ $file } = $fh;
     return $fh;
 }
 

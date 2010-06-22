@@ -34,11 +34,11 @@ any of it's methods yourself.
 
 =head1 VERSION
 
-FlatFile::DataStore::Toc version 0.14
+FlatFile::DataStore::Toc version 0.15
 
 =cut
 
-our $VERSION = '0.13';
+our $VERSION = '0.15';
 
 use 5.008003;
 use strict;
@@ -221,7 +221,10 @@ sub read_toc {
     else {
         $seekpos = $toclen * $fint; }
 
-    return $ds->read_bytes( $tocfh, $seekpos, $toclen );
+    my $tocline = $ds->read_bytes( $tocfh, $seekpos, $toclen );
+    close $tocfh or die "Can't close $tocfile: $!";
+
+    $tocline;  # returned
 }
 
 #---------------------------------------------------------------------
@@ -238,7 +241,8 @@ sub write_toc {
 
     my $ds = $self->datastore;
 
-    my $tocfh   = $ds->locked_for_write( $self->tocfile( $fint ) );
+    my $tocfile = $self->tocfile( $fint );
+    my $tocfh   = $ds->locked_for_write( $tocfile );
     my $toclen  = $ds->toclen;
 
     my $seekpos;
@@ -248,7 +252,8 @@ sub write_toc {
     else {
         $seekpos = $toclen * $fint; }
 
-    return $ds->write_bytes( $tocfh, $seekpos, \($self->to_string) );
+    $ds->write_bytes( $tocfh, $seekpos, \($self->to_string) );
+    close $tocfh or die "Can't close $tocfile: $!";
 }
 
 #---------------------------------------------------------------------
