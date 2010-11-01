@@ -98,8 +98,14 @@ my $desc = "Example FlatFile::DataStore";
     is( Dumper($ds->crud),
         "{'#' => 'oldupd','*' => 'olddel','+' => 'create','-' => 'delete','=' => 'update','create' => '+','delete' => '-','olddel' => '*','oldupd' => '#','update' => '='}",
         "crud()" );
-    is( Dumper($ds->regx),
-        "qr/(?-xism:([\\+\\#\\=\\*\\-])([\\+\\#\\=\\*\\-])([0-9]{8})([-0-9]{2})([-0-9]{2})([-0-9]{2})([-0-9])([-0-9]{4})([-0-9])([-0-9]{4})([-0-9])([-0-9]{4})([ -~]{10}))/",
+
+    my $regx_string =
+        quotemeta('(?').
+        '(?:\^|-xism)'.  # (?^:...) replaces (?-xism:...) in Perl 5.13
+        quotemeta(':([\+\#\=\*\-])([\+\#\=\*\-])([0-9]{8})([-0-9]{2})([-0-9]{2})([-0-9]{2})([-0-9])([-0-9]{4})([-0-9])([-0-9]{4})([-0-9])([-0-9]{4})([ -~]{10}))');
+
+    like( $ds->regx,
+        qr/$regx_string/,
         "regx()" );
     is( Dumper($ds->specs),
         "{'indicator' => [0,1,'+#=*-']}{'transind' => [1,1,'+#=*-']}{'date' => [2,8,'yyyymmdd']}{'transnum' => [10,2,'10']}{'keynum' => [12,2,'10']}{'reclen' => [14,2,'10']}{'thisfnum' => [16,1,'10']}{'thisseek' => [17,4,'10']}{'prevfnum' => [21,1,'10']}{'prevseek' => [22,4,'10']}{'nextfnum' => [26,1,'10']}{'nextseek' => [27,4,'10']}{'user' => [31,10,' -~']}",

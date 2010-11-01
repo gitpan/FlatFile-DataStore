@@ -1,5 +1,10 @@
 Revision history for Perl extension FlatFile::DataStore.
 
+0.16 Mon Nov  1 09:16:56 EDT 2010
+    - minor doc fixes
+    - change 'xism' to '(?:\^|xism)' in regx test
+      -- Added (?^...) regex construct in Perl 5.13
+
 0.15 Mon Jun 21 14:54:56 EDT 2010
     - discontinue the practice of caching file handles
 

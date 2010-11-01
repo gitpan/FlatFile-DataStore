@@ -7,7 +7,7 @@ of FlatFile::DataStore.
 
 =head1 VERSION
 
-Discusses FlatFile::DataStore version 0.15.
+Discusses FlatFile::DataStore version 0.16.
 
 =head1 SYNOPSYS
 
@@ -51,7 +51,7 @@ create (store) a new record, it is appended to the flat file.  When you
 update an existing record, the existing entry in the flat file is
 flagged as updated, and the updated record is appended to the flat
 file.  When you delete a record, the existing entry is flagged as
-deleted, and a I<"delete record"> is I<appended> to the flat file.
+deleted, and a "delete record" is I<appended> to the flat file.
 
 The result is that all versions of a record are retained in the data
 store, and running a history will return all of them.  Another result
@@ -113,7 +113,7 @@ Again, a data store will have the following files:
  - uri  file,    contains the uri, which defines the configuration parameters
                  after initialization, it contains a generic serialized datastore object
                  ('generic' because the object does not include the 'dir' attribute)
- - toc  file(s), contain information the data store and each data file
+ - toc  file(s), contain information about the data store and each data file
  - key  file(s), contain pointers to every current record version
  - data file(s), contain all the versions of all the records
 
@@ -132,63 +132,63 @@ will reside at the same level as the uri file, e.g.,
 If C<dirlev> is 1, the directory structure follows the following scheme
 (note that like file numbers, directory numbers start at 1, not at 0):
 
-- dir
-    - name.uri
-    - name
-        - toc1
-            - name.1.toc
-            - name.2.toc
+    - dir
+        - name.uri
+        - name
+            - toc1
+                - name.1.toc
+                - name.2.toc
+                - etc.
+            - toc2
             - etc.
-        - toc2
-        - etc.
-        - key1
-            - name.1.key
-            - name.2.key
+            - key1
+                - name.1.key
+                - name.2.key
+                - etc.
+            - key2
             - etc.
-        - key2
-        - etc.
-        - data1
-            - name.1.data
-            - name.2.data
+            - data1
+                - name.1.data
+                - name.2.data
+                - etc.
+            - data2
             - etc.
-        - data2
-        - etc.
 
 If C<dirlev> is 2, the scheme will look something like this:
 
-- dir
-    - name.uri
-    - name
-        - toc1
-            - 1
-                - name.1.toc,
-                - name.2.toc,
+    - dir
+        - name.uri
+        - name
+            - toc1
+                - 1
+                    - name.1.toc,
+                    - name.2.toc,
+                    - etc.
+                - 2
+                    - ...
                 - etc.
-            - 2
-                - ...
+            - toc2
             - etc.
-        - toc2
-        - etc.
-        - key1
-            - 1
-                - name.1.key,
-                - name.2.key,
+            - key1
+                - 1
+                    - name.1.key,
+                    - name.2.key,
+                    - etc.
+                - 2
+                    - ...
                 - etc.
-            - 2
-                - ...
+            - key2,
             - etc.
-        - key2,
-        - etc.
-        - data1
-            - 1
-                - name.1.data
-                - name.2.data,
+            - data1
+                - 1
+                    - name.1.data
+                    - name.2.data,
+                    - etc.
+                - 2
+                    - ...
                 - etc.
-            - 2
-                - ...
+            - data2,
             - etc.
-        - data2,
-        - etc.
 
 Since a C<dirlev> of 2 can accommodate millions of data files,
 it's unlikely you'll need a level of 3 or more.
@@ -203,11 +203,10 @@ Different data stores may coexist in the same top-level directory--they
 just have to have different names.
 
 To retrieve a record, one must know the data file number and the seek
-position into that data file, or one must know the record's key
-sequence number (the order it was added to the data store).  With a
-sequence number, the file number and seek position can be looked up in
-a key file, so these sequence numbers are called "key numbers" or
-C<keynum>.
+position into that data file, or the record's key sequence number (the
+order it was added to the data store).  With a sequence number, the
+file number and seek position can be looked up in a key file, so these
+sequence numbers are called "key numbers" or C<keynum>.
 
 Methods support the following actions:
 
@@ -377,6 +376,7 @@ The toc file will have a total line at the top and a detail line for
 each data file below that.
 
 The fields in these lines are as follows:
+
  -  1. len FN, tocfnum,  last toc file
  -  2. len FN, keyfnum,  last key file
  -  3. len FN, datafnum, last data file
@@ -388,7 +388,7 @@ The fields in these lines are as follows:
  -  9. len TN, update,   number of records with update indicator
  - 10. len TN, olddel,   number of records with olddel indicator
  - 11. len TN, delete,   number of records with delete indicator
- - 12. len RS, recsep    (usually just a newline)
+ - 12. len RS, recsep    (typically just a newline)
 
 For example:
 
@@ -396,11 +396,11 @@ For example:
 
 FN is filenumlen; KN is keynumlen; TN is transnumlen; RS is recseplen.
 
-Fields 1 - 6 of the very first line (line number 0) of the toc file is
-the "top toc" line.  It has the vital information for the datastore,
-i.e., the current toc file number, the current key file number, the
-current data file number, the number of (non-deleted) records in the
-data store, the last key sequence number used, and the last transaction
+The very first line (line number 0) of the toc file is the "top toc"
+line.  Fields 1 - 6 have the vital information for the datastore, i.e.,
+the current toc file number, the current key file number, the current
+data file number, the number of (non-deleted) records in the data
+store, the last key sequence number used, and the last transaction
 number used.  To get any of these, the module only has to read and
 split a single line.
 
@@ -408,7 +408,7 @@ Fields 7 - 11 are there just for kicks, really.  They might aid in
 validation or tracking or whatever in the future, but at this time, the
 module doesn't read them for anything, it just keeps them up to date.
 
-On the detail lines, all of these values may be again useful for
+On the detail lines, all of these values may again be useful for
 validation, tracking, data recovery, etc., but the module doesn't (yet)
 read them for anything, it just keeps them up to date.
 
@@ -430,6 +430,7 @@ On each transaction, the module will update these on:
  - the first line ("last" numbers and totals) 
 
 Random access by line is accommodated because we know the length of each line and
+
  - line 0 is the total line
  - line 1 is details for example.1.data
  - line 2 is details for example.2.data

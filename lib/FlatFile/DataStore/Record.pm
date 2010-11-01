@@ -49,11 +49,11 @@ likely call the accessors.
 
 =head1 VERSION
 
-FlatFile::DataStore::Record version 0.15
+FlatFile::DataStore::Record version 0.16
 
 =cut
 
-our $VERSION = '0.15';
+our $VERSION = '0.16';
 
 use 5.008003;
 use strict;
@@ -80,7 +80,14 @@ populate the record string.  Two keys are recognized:
  - preamble, i.e., a FlatFile::DataStore::Preamble object
  - data,     the actual record data
 
-The record data is stored in the object as a scalar reference.
+The record data is stored in the object as a scalar reference, and
+new() will accept a scalar ref, e.g.,
+
+ my $record_data = "This is a test record.";
+ my $record = FlatFile::DataStore::Record->new( {
+     preamble => $preamble_obj,
+     data     => \$record_data,
+     } );
 
 =cut
 

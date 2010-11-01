@@ -48,7 +48,7 @@ create (store) a new record, it is appended to the flat file.  When you
 update an existing record, the existing entry in the flat file is
 flagged as updated, and the updated record is appended to the flat
 file.  When you delete a record, the existing entry is flagged as
-deleted, and a I<"deleted record"> is I<appended> to the flat file.
+deleted, and a "delete record" is I<appended> to the flat file.
 
 The result is that all versions of a record are retained in the data
 store, and running a history will return all of them.  Another result
@@ -75,11 +75,11 @@ See FlatFile::DataStore::Tiehash for a tied interface.
 
 =head1 VERSION
 
-FlatFile::DataStore version 0.15
+FlatFile::DataStore version 0.16
 
 =cut
 
-our $VERSION = '0.15';
+our $VERSION = '0.16';
 
 use 5.008003;
 use strict;
@@ -626,7 +626,7 @@ Returns a Flatfile::DataStore::Record object.
 
 Note: the record data (but not user data) is stored in the FF::DS::Record
 object as a scalar reference.  This is done for efficiency in the cases
-where the record data may be very large.  Likewise, the first parm to
+where the record data may be very large.  Likewise, the second parm to
 update() is allowed to be a scalar reference.
 
 =cut
@@ -785,7 +785,7 @@ Returns a Flatfile::DataStore::Record object.
 
 Note: the record data (but not user data) is stored in the FF::DS::Record
 object as a scalar reference.  This is done for efficiency in the cases
-where the record data may be very large.  Likewise, the first parm to
+where the record data may be very large.  Likewise, the second parm to
 delete() is allowed to be a scalar reference.
 
 =cut
@@ -1149,7 +1149,8 @@ indefinitely.
 If no C<keymax>, there will be only one key file, which will grow
 indefinitely.
 
-If no C<userdata>, will default to '' unless supplied another way.
+If no C<userdata>, will default to a null string unless supplied
+another way.
 
 =cut
 
@@ -1476,6 +1477,9 @@ Returns lastkeynum()+1 (a convenience method).  This could be useful
 for adding a new record to a hash tied to a data store, e.g.,
 
     $h{ $ds->nextkeynum } = "New record data.";
+
+(but also note that there is a "null key" convention for this -- see
+FlatFile::DataStore::Tiehash)
 
 =cut
 
@@ -2212,7 +2216,7 @@ For C<defaults=large>:
 
 The last four are not set for C<defaults=large_nohist>.
 
-Rough estimates: 916B records/transactions, no larger than 916M bytes
+Rough estimates: 916M records/transactions, no larger than 916M bytes
 each; 88 Terabytes total (46,655 * 1.9G).
 
 =item xlarge, xlarge_nohist
@@ -2284,7 +2288,7 @@ longer name) for the datastore.
 
 =item datamax
 
-The datamax parameter give the maximum number of bytes a data file may contain.
+The datamax parameter gives the maximum number of bytes a data file may contain.
 If you don't provide a datamax, it will be computed from the thisseek value (see
 thisseek above for more details).
 
@@ -2390,8 +2394,7 @@ Those provided values will override the value given in the call to new(),
 which will override the value given here in the uri.
 
 If you don't specify a default value here or in the call to new(), the
-value defaults to a null string (which may then be padded with more
-spaces).
+value defaults to a null string (which would be padded with spaces).
 
     userdata=:
 
