@@ -107,7 +107,7 @@ ok( $ds, "FlatFile::DataStore->new()" );
 
     # now with some data
 
-    $rec = $ds->create( "This is a test.", ":" );
+    $rec = $ds->create({ data => "This is a test.", user => ":" });
     $toc = FlatFile::DataStore::Toc->new(
         { int => 0,
           datastore => $ds,
@@ -131,7 +131,7 @@ ok( $ds, "FlatFile::DataStore->new()" );
     # once more, but get the second line of the tocfile
     # (should be the same as the first)
 
-    $rec = $ds->create( "This is another test.", ":" );
+    $rec = $ds->create({ data => "This is another test.", user => ":" });
     $toc = FlatFile::DataStore::Toc->new(
         { int => 1,
           datastore => $ds,
@@ -154,7 +154,7 @@ ok( $ds, "FlatFile::DataStore->new()" );
 
     # less data
 
-    $rec = $ds->delete( $rec, "Test deleted.", ":" );
+    $rec = $ds->delete({ record => $rec, data => "Test deleted.", user => ":" });
     $toc = FlatFile::DataStore::Toc->new(
         { int => 0,
           datastore => $ds,

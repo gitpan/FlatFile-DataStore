@@ -54,9 +54,9 @@ my $desc = "Example FlatFile::DataStore";
      } );
 
 my @recs;
-push @recs, $ds->create( 'Test Record 1' );
-push @recs, $ds->create( 'Test Record 2' );
-push @recs, $ds->create( 'Test Record 3' );
+push @recs, $ds->create({ data => 'Test Record 1' });
+push @recs, $ds->create({ data => 'Test Record 2' });
+push @recs, $ds->create({ data => 'Test Record 3' });
 
 for( my $i = 0; $i < 2; $i++ ) {
     my $rec = $ds->retrieve( $i );

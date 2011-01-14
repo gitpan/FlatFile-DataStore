@@ -60,7 +60,7 @@ ok( $ds, "FlatFile::DataStore->new()" );
 
 my $indicator = '+';
 my $transind  = '+';
-my $date      = 'WQ6A';
+my $date      = 'WQ6A000';
 my $transint  = 1;
 my $keynum    = 0;
 my $reclen    = 100;
@@ -96,7 +96,7 @@ ok( $preamble, "FF::DS::Preamble->new()" );
 
  my $string = $preamble->string();
 
-is( $string, '++WQ6A01001c10000----------:', "string()" );
+is( $string, '++WQ6A00001001c10000----------:', "string()" );
 
  my $clone = FlatFile::DataStore::Preamble->new( {
      datastore => $ds,
@@ -110,7 +110,7 @@ is( $clone->string(), $preamble->string(), "clone" );
 
 # $preamble->string(    $value ); # full preamble string
 
-is( $string, '++WQ6A01001c10000----------:', "string()" );
+is( $string, '++WQ6A00001001c10000----------:', "string()" );
 
 # $preamble->indicator( $value ); # single-character crud indicator
 
@@ -122,7 +122,7 @@ is( $preamble->transind(), '+', "transind()" );
 
 # $preamble->date(      $value ); # date as YYYY-MM-DD
 
-is( $preamble->date(), '2010-06-10', "date()" );
+is( $preamble->date(), '2010-06-10 00:00:00', "date()" );
 
 # $preamble->transnum(  $value ); # transaction number (integer)
 
@@ -174,7 +174,7 @@ is( Dumper($preamble->crud()),
 
 ok( $preamble->is_created(), "is_created()" );
 
-my $rec = $ds->create( "This is a test", ":" );
+my $rec = $ds->create({ data => "This is a test", user => ":" });
 
 ok( $rec->preamble->is_created(), "is_created()" );
 ok( $rec->is_created(), "is_created()" );

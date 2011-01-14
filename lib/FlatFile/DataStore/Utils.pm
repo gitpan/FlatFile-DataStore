@@ -24,11 +24,11 @@ FlatFile::DataStore data stores.
 
 =head1 VERSION
 
-VERSION: 0.16
+VERSION: 1.00
 
 =cut
 
-our $VERSION = '0.16';
+our $VERSION = '1.00';
 
 #---------------------------------------------------------------------
 

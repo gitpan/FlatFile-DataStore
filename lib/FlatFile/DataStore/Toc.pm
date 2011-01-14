@@ -34,11 +34,11 @@ any of it's methods yourself.
 
 =head1 VERSION
 
-FlatFile::DataStore::Toc version 0.16
+FlatFile::DataStore::Toc version 1.00
 
 =cut
 
-our $VERSION = '0.16';
+our $VERSION = '1.00';
 
 use 5.008003;
 use strict;
@@ -101,16 +101,19 @@ sub new {
 sub init {
     my( $self, $parms ) = @_;
 
-    my $ds = $parms->{'datastore'} || croak "Missing datastore";
+    my $ds = $parms->{'datastore'} || croak qq/Missing: datastore/;
     $self->datastore( $ds );
 
     my $datafint;
     if(    defined( my $int = $parms->{'int'} ) ) {
-        $datafint = $int; }
+        $datafint = $int;
+    }
     elsif( defined( my $num = $parms->{'num'} ) ) {
-        $datafint = base2int $num, $ds->fnumbase; }
+        $datafint = base2int $num, $ds->fnumbase;
+    }
     else {
-        croak qq/Missing parms 'int' or 'num'./; }
+        croak qq/Missing: int or num/;
+    }
 
     my $sref = $self->read_toc( $datafint );
     my $string = $sref? $$sref: '';
@@ -222,7 +225,7 @@ sub read_toc {
         $seekpos = $toclen * $fint; }
 
     my $tocline = $ds->read_bytes( $tocfh, $seekpos, $toclen );
-    close $tocfh or die "Can't close $tocfile: $!";
+    close $tocfh or croak qq/Can't close $tocfile: $!/;
 
     $tocline;  # returned
 }
@@ -253,7 +256,7 @@ sub write_toc {
         $seekpos = $toclen * $fint; }
 
     $ds->write_bytes( $tocfh, $seekpos, \($self->to_string) );
-    close $tocfh or die "Can't close $tocfile: $!";
+    close $tocfh or croak qq/Can't close $tocfile: $!/;
 }
 
 #---------------------------------------------------------------------
@@ -274,17 +277,19 @@ sub toc_getfnum {
     # get toc file number based on tocmax and fint
     my $tocfint;
 
-    my $tocmax = $ds->tocmax;
+    my  $tocmax = $ds->tocmax;
     if( $tocmax ) { $tocfint = int( $fint / $tocmax ) + 1 }
     else          { $tocfint = 1                          }
 
     my $fnumlen  = $ds->fnumlen;
     my $fnumbase = $ds->fnumbase;
-    my $tocfnum = int2base $tocfint, $fnumbase, $fnumlen;
-    croak qq/Database exceeds configured size (tocfnum: "$tocfnum" too long)/
+    my $tocfnum  = int2base $tocfint, $fnumbase, $fnumlen;
+
+    croak qq/Database exceeds configured size, tocfnum too long: $tocfnum/
         if length $tocfnum > $fnumlen;
+
     return( $tocfint, $tocfnum ) if wantarray;
-    return $tocfint;
+    return  $tocfint;
 }
 
 #---------------------------------------------------------------------

@@ -22,11 +22,11 @@ FlatFile::DataStore class.
 
 =head1 VERSION
 
-FlatFile::DataStore::Initialize version 0.16
+FlatFile::DataStore::Initialize version 1.00
 
 =cut
 
-our $VERSION = '0.16';
+our $VERSION = '1.00';
 
 use 5.008003;
 use strict;
@@ -67,11 +67,13 @@ sub burst_query {
         $name = uri_unescape( $name );
         $val  = uri_unescape( $val );
 
-        croak qq/"$name" duplicated in uri/ if $parms{ $name };
+        croak qq/Parm duplicated in uri: $name/ if $parms{ $name };
 
         $parms{ $name } = $val;
         if( $Preamble->{ $name } ) {
             my( $len, $parm ) = split /-/, $val, 2;
+            croak qq/Value must be format 'length-parm': $name=$val/
+                unless defined $len and defined $parm;
             omap_add( $omap, $name => [ $pos, 0+$len, $parm ] );
             $pos += $len;
         }
@@ -113,8 +115,8 @@ sub defaults {
     my @xsmall_nohist = (
         "indicator=$ind",
         "transind=$ind",
-        "date=4-yymd",
-        "transnum=2-62 ",  # 3,843 transactions
+        "date=7-yymdttt",
+        "transnum=2-62",   # 3,843 transactions
         "keynum=2-62",     # 3,843 records
         "reclen=2-62",     # 3,843 bytes/record
         "thisfnum=1-36",   # 35 data files
@@ -131,10 +133,10 @@ sub defaults {
     my @small_nohist = (
         "indicator=$ind",
         "transind=$ind",
-        "date=4-yymd",
-        "transnum=3-62 ",  # 238,327 transactions
-        "keynum=2-62",     # 238,327 records
-        "reclen=2-62",     # 238,327 bytes/record
+        "date=7-yymdttt",
+        "transnum=3-62",   # 238,327 transactions
+        "keynum=3-62",     # 238,327 records
+        "reclen=3-62",     # 238,327 bytes/record
         "thisfnum=1-36",   # 35 data files
         "thisseek=5-62",   # 916,132,831 bytes/file
     );
@@ -149,8 +151,8 @@ sub defaults {
     my @medium_nohist = (
         "indicator=$ind",
         "transind=$ind",
-        "date=4-yymd",
-        "transnum=4-62 ",  # 14,776,335 transactions
+        "date=7-yymdttt",
+        "transnum=4-62",   # 14,776,335 transactions
         "keynum=4-62",     # 14,776,335 records
         "reclen=4-62",     # 14,776,335 bytes/record
         "thisfnum=2-36",   # 1,295 data files
@@ -170,8 +172,8 @@ sub defaults {
         "keymax=100_000",
         "indicator=$ind",
         "transind=$ind",
-        "date=4-yymd",
-        "transnum=5-62 ",  # 916,132,831 transactions
+        "date=7-yymdttt",
+        "transnum=5-62",   # 916,132,831 transactions
         "keynum=5-62",     # 916,132,831 records
         "reclen=5-62",     # 916,132,831 bytes/record
         "thisfnum=3-36",   # 46,655 data files
@@ -193,8 +195,8 @@ sub defaults {
         "tocmax=100_000",
         "indicator=$ind",
         "transind=$ind",
-        "date=4-yymd",
-        "transnum=6-62 ",  # 56B transactions
+        "date=7-yymdttt",
+        "transnum=6-62",   # 56B transactions
         "keynum=6-62",     # 56B records
         "reclen=6-62",     # 56G per record
         "thisfnum=4-36",   # 1,679,615 data files
@@ -221,7 +223,7 @@ sub defaults {
         xlarge_nohist => \@xlarge_nohist,
     }->{ $want };
 
-    croak "Unrecognized default: $want." unless $ret;
+    croak qq/Unrecognized defaults: $want/ unless $ret;
     @$ret;  # returned
 }
 
@@ -244,12 +246,20 @@ sub make_preamble_regx {
             if( /indicator/ or /transind/ ) {
                 $regx .= ($len == 1 ? "([\Q$parm\E])" : "([\Q$parm\E]{$len})");
             }
-            elsif( /user/ ) {  # should only allow $Ascii_chars
+            elsif( /user/ ) {
+                # XXX should only allow $Ascii_chars, not checked here
                 # (metachars in $parm should already be escaped as needed)
                 $regx .= ($len == 1 ? "([$parm])" : "([$parm]{$len})");
             }
             elsif( /date/ ) {
-                $regx .= ($len == 8 ? "([0-9]{8})" : "([0-9A-Za-z]{4})");
+                # XXX regx makes no attempt to insure an actual valid date
+                # XXX this code needs to barf on, e.g., yyyyyyyy ...
+                # e.g., yyyymmdd(8) yyyymmddtttttt(14) yymd(4) yymdttt(7)
+                croak qq/Invalid date length: $len/
+                    unless $len =~ /^(?:4|7|8|14)$/;
+                croak qq/Date length doesn't match format: $len-$parm/
+                    unless $len == length $parm;
+                $regx .= ($len < 8 ? "([0-9A-Za-z]{$len})" : "([0-9]{$len})");
             }
             else {
                 my $chars = base_chars( $parm );
@@ -283,7 +293,7 @@ sub make_crud {
     my( $self ) = @_;
 
     my( $len, $chars ) = split /-/, $self->indicator, 2;
-    croak qq/Only single-character indicators supported./ if $len != 1;
+    croak qq/Only single-character indicators supported/ if $len != 1;
 
     my @c = split //, $chars;
     my %c = map { $_ => 1 } @c;
@@ -333,7 +343,7 @@ sub initialize {
 
     my $fnum     = int2base 1, $self->fnumbase, $self->fnumlen;
     my $datafile = $self->which_datafile( $fnum );
-    croak qq/Can't initialize database: data files exist (e.g., $datafile)./
+    croak qq/Can't initialize database (data files exist): $datafile/
         if -e $datafile;
 
     # make object a one-liner
@@ -381,9 +391,9 @@ sub write_file {
     my $fh = $self->locked_for_write( $file );
     my $type = ref $contents;
     if( $type ) {
-        if   ( $type eq 'SCALAR' ) { print $fh $$contents           }
-        elsif( $type eq 'ARRAY'  ) { print $fh join "", @$contents  }
-        else                       { croak "Unrecognized type: $type" }
+        if   ( $type eq 'SCALAR' ) { print $fh $$contents               }
+        elsif( $type eq 'ARRAY'  ) { print $fh join "", @$contents      }
+        else                       { croak qq/Unrecognized type: $type/ }
     }
     else { print $fh $contents }
     close $fh or die "Can't close $file: $!";

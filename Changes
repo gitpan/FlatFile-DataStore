@@ -1,5 +1,28 @@
 Revision history for Perl extension FlatFile::DataStore.
 
+1.00 Thu Jan 13 11:46:11 EST 2011
+    - removed Tutorial.pm (never used)
+    - added tests
+    - some code refactoring
+    - added FF::DS::DBM::get_keynum()
+    - moved into production
+
+0.17 Thu Dec 23 17:15:20 EST 2010
+    - major API change: parameters to create(), update(),
+      and delete() are now passed as record or a hashref
+      (incompatable with previous versions' conventions)
+    - added FlatFile::DataStore::DBM and tests
+    - added FlatFile::DataStore::locate_record_data()
+    - minor doc fixes
+    - added timestamp (tttttt or ttt) in preamble date
+    - DataStore.pm
+      - added exists() (for datastore)
+      - added untaint()
+      - minor logic changes
+      - locked_for_read may create an empty file
+    - Initialize.pm
+      - corrected some faulty defaults
+
 0.16 Mon Nov  1 09:16:56 EDT 2010
     - minor doc fixes
     - change 'xism' to '(?:\^|xism)' in regx test

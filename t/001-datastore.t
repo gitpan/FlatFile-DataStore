@@ -112,6 +112,7 @@ my $desc = "Example FlatFile::DataStore";
         "specs()" );
 }
 
+#---------------------------------------------------------------------
 {  # crud
 
     my( $y, $m, $d ) = sub{($_[5]+1900,$_[4]+1,$_[3])}->(localtime);
@@ -129,7 +130,7 @@ my $desc = "Example FlatFile::DataStore";
     #                  ----+----1----+----2---- (reclen:24)
     my $record_data = "This is testing record1.";
 
-    my $record = $ds->create( $record_data, $user_data );
+    my $record = $ds->create({ data => $record_data, user => $user_data });
     is( Dumper($record),
 
         qq/bless( {'data' => \\'This is testing record1.','preamble' => bless( {'crud' => {'#' => 'oldupd','*' => 'olddel','+' => 'create','-' => 'delete','=' => 'update','create' => '+','delete' => '-','olddel' => '*','oldupd' => '#','update' => '='},'date' => '$yyyy_mm_dd','indicator' => '+','keynum' => 0,'reclen' => 24,'string' => '++${yyyymmdd}01002410000----------Testing1  ','thisfnum' => '1','thisseek' => 0,'transind' => '+','transnum' => 1,'user' => 'Testing1'}, 'FlatFile::DataStore::Preamble' )}, 'FlatFile::DataStore::Record' )/,
@@ -175,7 +176,7 @@ my $desc = "Example FlatFile::DataStore";
     ok( $record->is_created, "is_created()" );
     ok( $record2->is_created, "is_created()" );
 
-    my $updrec = $ds->update( $record, "Updated Record", "Updated1" );
+    my $updrec = $ds->update({ record => $record, data => "Updated Record", user => "Updated1" });
 
     my $rec_data = $updrec->data;
     is( $$rec_data,    "Updated Record", "rec->data()" );
@@ -187,7 +188,7 @@ my $desc = "Example FlatFile::DataStore";
     ok( $delrec->is_deleted, "is_deleted()" );
 
     $ds->userdata( "testing" );
-    $record = $ds->create( "Another test." );
+    $record = $ds->create({ data => "Another test." });
     is( $record->user, "testing", "userdata()" );
 
     $record->data( "Yet another test." );
@@ -197,11 +198,51 @@ my $desc = "Example FlatFile::DataStore";
     my $recdata2 = $record2->data;
     is( $$recdata, $$recdata2, "create( record )" );
 
-    $record2 = $ds->create( $record, 'other user' );
+    $record2 = $ds->create({ record => $record, user => 'other user' });
     is( $record2->user, 'other user', "create( record, user data )" );
 
-    $record = $ds->create( \"Apple", 'fruit' );
+    $record = $ds->create({ data => \"Apple", user => 'fruit' });
     is( ${$record->data}, 'Apple', "create( scalar-ref, user data )" );
     is( $record->user, 'fruit', "create( scalar-ref, user data )" );
+}
+
+#---------------------------------------------------------------------
+{  # misc
+
+    my $ds = FlatFile::DataStore->new( {
+        dir  => $dir,
+        name => $name,
+    } );
+
+    ok( $ds, "new()" );
+
+    # we want the newlines here:
+    my $msg1 = "For testing retrieve_preamble()\n";
+    my $msg2 = "For testing locate_record_data()\n";
+
+    my $record = $ds->create({ data => "$msg1$msg2" });
+    my $keynum = $record->keynum;
+    my $preamble_string1 = $record->preamble_string;
+
+    my $preamble = $ds->retrieve_preamble( $keynum );
+    my $preamble_string2 = $preamble->string;
+
+    is( $preamble_string1, $preamble_string2, "retrieve_preamble()" );
+
+    my $buffer = '';
+
+    # see POD:
+    my( $fh, $pos, $len ) = $ds->locate_record_data( $keynum );
+    my $got;
+    while( <$fh> ) {
+        last if ($got += length) > $len;  # in case we read the recsep
+        # [do something with $_ ...]
+        $buffer .= $_;
+        last if $got == $len;
+    }
+    close $fh;
+
+    is( $buffer, "$msg1$msg2", "locate_record_data()" );
+
 }
 

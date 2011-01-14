@@ -63,7 +63,7 @@ ok( tied(%dshash), "tied datastore object" );
 
     # create a record (null string key says, "new record")
 
-    my $record = $dshash{''} = [ "Test record", "userdata" ];
+    my $record = $dshash{''} = { data => "Test record", user => "userdata" };
     my $record_number = $record->keynum;
 
 ok( $record, "record object" );
@@ -102,10 +102,10 @@ my $user_data   = "userdata";
 is( ${$dshash{ $record->keynum }->data}, $record_data, "scalar record data" );
 is( $dshash{ $record->keynum }->user, "", "scalar record data ... user data default" );
 
- $record = $dshash{''} = [ $record_data, $user_data ];
+ $record = $dshash{''} = { data => $record_data, user => $user_data };
 
-is( ${$dshash{ $record->keynum }->data}, $record_data, "aref record data" );
-is( $dshash{ $record->keynum }->user, $user_data, "aref user data" );
+is( ${$dshash{ $record->keynum }->data}, $record_data, "href record data" );
+is( $dshash{ $record->keynum }->user, $user_data, "href user data" );
 
  $record->data( $record_data );
  $record->user( $user_data );

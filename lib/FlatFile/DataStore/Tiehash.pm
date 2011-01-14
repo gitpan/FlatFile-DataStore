@@ -30,7 +30,7 @@ intended for loading more methods into the FlatFile::DataStore class.
 
     # create a record (null string key says, "new record")
 
-    my $record = $dshash{''} = [ "Test record", "Test user data" ];
+    my $record = $dshash{''} = { data => "Test record", user => "Test user data" };
     my $record_number = $record->keynum;
 
     # update it (have to "have" a record to update it)
@@ -52,8 +52,8 @@ intended for loading more methods into the FlatFile::DataStore class.
 
     # test it ... exists is true after a delete
 
-    if( $record = exists $dshash{ $record_number } ) {
-        print "Deleted." if $record->is_deleted;
+    if( $preamble = exists $dshash{ $record_number } ) {
+        print "Deleted." if $preamble->is_deleted;
     }
 
 =head1 DESCRIPTION
@@ -69,16 +69,12 @@ record and store that as the "delete record".  If you want the "delete
 record" to contain different information (such as who is deleting it),
 you must call the non-tied delete() method with the datastore object.
 
-Note that record data may be created or updated (i.e., STORE'd) three
+Note that record data may be created or updated (i.e., STORE'd) two
 ways:
 
-As a scalar (default user data will be used), e.g.,
+As a hash reference (so you can supply some user data), e.g.
 
-    $record = $dshash{''} = $record_data;
-
-As an array reference (so you can supply some user data), e.g.
-
-    $record = $dshash{''} = [ $record_data, $user_data ];
+    $record = $dshash{''} = { data => $record_data, user => $user_data };
 
 As a record object (record data and user data gotten from object),
 e.g.,
@@ -108,11 +104,11 @@ saves you from having to do something like this equivalent code:
  
 =head1 VERSION
 
-FlatFile::DataStore::Tiehash version 0.16
+FlatFile::DataStore::Tiehash version 1.00
 
 =cut
 
-our $VERSION = '0.16';
+our $VERSION = '1.00';
 
 use 5.008003;
 use strict;
@@ -142,43 +138,46 @@ sub FETCH {
 #     Keys are limited to 0 .. lastkeynum (integers)
 #     If $key is new, it has to be nextkeynum, i.e., you can't leave
 #     gaps in the sequence of keys
-#     e.g., $h{ keys %h                } = [ "New", "record" ];
-#     or    $h{ tied( %h )->nextkeynum } = [ "New", "record" ];
-#     or    $h{ ''                     } = [ "New", "record" ];
-#     or    $h{ undef                  } = [ "New", "record" ];
+#     e.g., $h{ keys %h                } = { data => "New", user => "record" };
+#     or    $h{ tied( %h )->nextkeynum } = { data => "New", user => "record" };
+#     or    $h{ ''                     } = { data => "New", user => "record" };
+#     or    $h{ undef                  } = { data => "New", user => "record" };
 #     ('keys %h' is fairly light-weight, but nextkeynum is more so
 #     and $h{''} (or $h{undef}) is shorthand for nextkeynum)
 
 sub STORE {
-    my( $self, $key, $record ) = @_;
+    my( $self, $key, $parms ) = @_;
 
     my $nextkeynum = $self->nextkeynum;
     $key = $nextkeynum if $key eq '';
-    croak "Unacceptable key: $key"
+    croak qq/Unsupported key format: $key/
         unless $key =~ /^[0-9]+$/ and $key <= $nextkeynum;
 
-    my $reftype = ref $record;
+    my $reftype = ref $parms;  # record, hash, sref, string
 
-    # for updates, $record must be a record object
+    # for updates, $parms must be a record object
     if( $key < $nextkeynum ) {
-        croak "Not a record object: $record"
-            if not( $reftype and $reftype =~ /Record/ );
-        my $keynum = $record->keynum;
-        croak "Record key number ($keynum) doesn't match key ($key)"
+        croak qq/Not a record object: $parms/
+            unless $reftype and $reftype =~ /Record/;
+        my $keynum = $parms->keynum;
+        croak qq/Record key number, $keynum, doesn't match key: $key/
             unless $key == $keynum;
-        return $self->update( $record );
+        return $self->update( $parms );
     }
 
-    # for creates, $record may be record object, aref or string
+    # for creates, $parms may be record, href, sref, or string
     else {
-        if( !$reftype or $reftype =~ /Record/ ) {  # string or obj
-            return $self->create( $record );
+        if( !$reftype or $reftype eq "SCALAR" ) {  # string
+            return $self->create({ data => $parms }); 
         }
-        if( $reftype eq 'ARRAY' ) {  # ['recdata','userdata']
-            return $self->create( $record->[0], $record->[1] );
+        if( $reftype =~ /Record/ ) {
+            return $self->create( $parms );
+        }
+        if( $reftype eq 'HASH' ) {  # e.g., {data=>'recdata',user=>'userdata'}
+            return $self->create( $parms );
         }
         else {
-            croak "Unacceptable reference type: $reftype";
+            croak qq/Unsupported ref type: $reftype/;
         }
     }
 }
@@ -208,7 +207,7 @@ sub DELETE {
 
 sub CLEAR {
     my $self = shift;
-    croak "Clearing the entire data store is not supported";
+    croak qq/Clearing the entire data store is not supported/;
 }
 
 #---------------------------------------------------------------------

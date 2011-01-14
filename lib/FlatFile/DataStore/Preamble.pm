@@ -50,11 +50,11 @@ record.
 
 =head1 VERSION
 
-FlatFile::DataStore::Preamble version 0.16
+FlatFile::DataStore::Preamble version 1.00
 
 =cut
 
-our $VERSION = '0.16';
+our $VERSION = '1.00';
 
 use 5.008003;
 use strict;
@@ -116,90 +116,103 @@ sub new {
 sub init {
     my( $self, $parms ) = @_;
 
-    my $datastore = $parms->{'datastore'} || croak "Missing datastore";
+    my $datastore = $parms->{'datastore'} || croak qq/Missing: datastore/;
+
     if( my $string = $parms->{'string'} ) {
-        $parms = $datastore->burst_preamble( $string );
+        $parms = $datastore->burst_preamble( $string );  # replace parms
     }
 
     my $crud = $datastore->crud();
     $self->crud( $crud );
 
-    my $create = $crud->{'create'};
-    my $update = $crud->{'update'};
-    my $delete = $crud->{'delete'};
-    my $oldupd = $crud->{'oldupd'};
-    my $olddel = $crud->{'olddel'};
+    # single chars for character classes:
+    my $create = quotemeta $crud->{'create'};
+    my $update = quotemeta $crud->{'update'};
+    my $delete = quotemeta $crud->{'delete'};
+    my $oldupd = quotemeta $crud->{'oldupd'};
+    my $olddel = quotemeta $crud->{'olddel'};
 
-    my $indicator = $parms->{'indicator'} || croak "Missing indicator";
+    # need these in validations below
+    my $indicator = $parms->{'indicator'} || croak qq/Missing: indicator/;
+    my $transind  = $parms->{'transind'}  || croak qq/Missing: transind/;
     $self->indicator( $indicator );
+    $self->transind(  $transind );
 
-    my $transind = $parms->{'transind'} || croak "Missing transind";
-    $self->transind( $transind );
-
-    my $string = "";
+    my $string = '';
     for my $href ( $datastore->specs() ) {  # each field is href of aref
         my( $field, $aref )     = %$href;
         my( $pos, $len, $parm ) = @$aref;
         my $value               = $parms->{ $field };
 
         for( $field ) {
-            if( /indicator/ or /transind/ ) {
-                croak qq'Missing value for "$_"' unless defined $value;
-                croak qq'Invalid value for "$_" ($value)' unless length $value == $len;
 
-                $self->{ $_ } = $value;
-                $string      .= $value;
+            if( /indicator|transind/ ) {
+
+                my $regx = qr/^[\Q$parm\E]{1,$len}$/;
+                croak qq/Invalid value, $value, for: $_/ unless $value =~ $regx;
+
+                # did these above
+                # croak qq/Missing: $_/ unless defined $value;
+                # $self->$_( $value );
+
+                $string .= $value;
             }
             elsif( /date/ ) {
-                croak qq'Missing value for "$_"' unless defined $value;
-                croak qq'Invalid value for "$_" ($value)' unless length $value == $len;
 
-                $self->{ $_ } = then( $value, $parm );
-                $string      .= $value;
+                croak qq/Missing: $_/ unless defined $value;
+                croak qq/Invalid value, $value, for: $_/ unless length $value == $len;
+
+                $self->$_( then( $value, $parm ) );
+                $string .= $value;
             }
             elsif( /user/ ) {
+
                 unless( defined $value ) {
                     $value = $datastore->userdata;
-                    croak qq'Missing value for "$_"' unless defined $value;
+                    croak qq/Missing: $_/ unless defined $value;
                 }
 
                 my $try = sprintf "%-${len}s", $value;  # pads with blanks
-                croak qq'Value of "$_" ($try) too long' if length $try > $len;
+                croak qq/Value, $try, too long for: $_/ if length $try > $len;
 
-                my $user_regx = qr/^[$parm]+ *$/;  # $parm chars already escaped as needed
-                croak qq'Invalid value for "$_" ($value)' unless $try =~ $user_regx;
+                my $regx = qr/^[$parm]+ *$/;  # $parm chars already escaped as needed
+                croak qq/Invalid value, $value, for: $_/ unless $try =~ $regx;
 
-                $self->{ $_ } = $value;
-                $string      .= $try;
+                $self->$_( $value );
+                $string .= $try;
             }
             elsif( not defined $value ) {
-                if( (/keynum|reclen|transnum|thisfnum|thisseek/              ) or
-                    (/prevfnum|prevseek/ and $indicator =~ /[\Q$update$delete\E]/) or
-                    (/nextfnum|nextseek/ and $indicator =~ /[\Q$oldupd$olddel\E]/) ) {
-                    croak qq'Missing value for "$_"';
+
+                if( ( /transnum|keynum|reclen|thisfnum|thisseek/               ) ||
+                    ( /prevfnum|prevseek/ and $transind  =~ /[$update$delete]/ ) ||
+                    ( /nextfnum|nextseek/ and $indicator =~ /[$oldupd$olddel]/ ) ){
+                    croak qq/Missing: $_/;
                 }
-                $string .= "-" x $len;  # string of '-' for null
+
+                $string .= '-' x $len;  # string of '-' for null
             }
             else {
-                if( (/nextfnum|nextseek/ and $indicator =~ /[\Q$update$delete\E]/) or
-                    (/prevfnum|prevseek/ and $indicator =~ /[\Q$create\E]/       ) ) {
-                    croak qq'Setting value of "$_" not permitted';
-                }
-                my $try = sprintf "%0${len}s", /fnum/? $value: int2base( $value, $parm );
-                croak qq'Value of "$_" ($try) too long' if length $try > $len;
 
-                $self->{ $_ } = /fnum/? $try: 0+$value;
-                $string      .= $try;
+                if( ( /prevfnum|prevseek/ and $indicator =~ /[$create]/        ) ||
+                    ( /nextfnum|nextseek/ and $indicator =~ /[$update$delete]/ ) ){
+                    croak qq/For indicator, $indicator, you may not set: $_/;
+                }
+
+                my $try = sprintf "%0${len}s", /fnum/? $value: int2base( $value, $parm );
+                croak qq/Value, $try, too long for: $_/ if length $try > $len;
+
+                $self->$_( /fnum/? $try: 0+$value );
+                $string .= $try;
             }
         }
     }
 
-    croak qq'Something is wrong with preamble string: "$string"'
+    croak qq/Something is wrong with preamble: $string/
         unless $string =~ $datastore->regx();
     
     $self->string( $string );
 
-    return $self;
+    $self;  # returned
 }
 
 #---------------------------------------------------------------------
@@ -212,7 +225,7 @@ if C<$value> is given.  Otherwise, they just return the value.
  $preamble->string(    $value ); # full preamble string
  $preamble->indicator( $value ); # single-character crud indicator
  $preamble->transind(  $value ); # single-character crud indicator
- $preamble->date(      $value ); # date as YYYY-MM-DD
+ $preamble->date(      $value ); # date as YYYY-MM-DD (hh:mm:ss)
  $preamble->transnum(  $value ); # transaction number (integer)
  $preamble->keynum(    $value ); # record sequence number (integer)
  $preamble->reclen(    $value ); # record length (integer)
@@ -280,34 +293,51 @@ sub is_deleted {
 }
 
 #---------------------------------------------------------------------
-# then(), translates stored date to YYYY-MM-DD
-#     Takes a date and a format and returns the date as yyyy-mm-dd.
+# then(), translates stored date to YYYY-MM-DD hh:mm:ss
+#     Takes a date and a format and returns the date as
+#     yyyy-mm-dd hh:mm:ss
 #     If the format contains 'yyyy' it is assumed to have decimal
-#     values for month, day, year.  Otherwise, it is assumed to have
-#     base62 values for them.
+#     values for month, day, year, hours, minutes, seconds.
+#     Otherwise, it is assumed to have base62 values for them.
 #
 # Private method.
 
 sub then {
     my( $date, $format ) = @_;
-    my( $y, $m, $d );
+    my( $yr, $mo, $da, $hr, $mn, $sc );
+    my $tm = '';
     my $ret;
     for( $format ) {
-        if( /yyyy/ ) {  # decimal year/month/day
-            $y = substr $date, index( $format, 'yyyy' ), 4;
-            $m = substr $date, index( $format, 'mm'   ), 2;
-            $d = substr $date, index( $format, 'dd'   ), 2;
+        if( /yyyy/ ) {  # decimal
+            $yr = substr $date, index( $format, 'yyyy'   ), 4;
+            $mo = substr $date, index( $format, 'mm'     ), 2;
+            $da = substr $date, index( $format, 'dd'     ), 2;
+            if( (my $pos = index( $format, 'tttttt' )) > -1 ) {
+                $tm = substr $date, $pos, 2;
+                ( $hr, $mn, $sc ) = $tm =~ /(..)(..)(..)/;
+                $tm = " $hr:$mn:$sc";
+            }
         }
-        else {  # assume base62 year/month/day
-            $y = substr $date, index( $format, 'yy' ), 2;
-            $m = substr $date, index( $format, 'm'  ), 1;
-            $d = substr $date, index( $format, 'd'  ), 1;
-            $y = sprintf "%04d", base2int( $y, 62 );
-            $m = sprintf "%02d", base2int( $m, 62 );
-            $d = sprintf "%02d", base2int( $d, 62 );
+        else {          # base62
+            $yr = substr $date, index( $format, 'yy'  ), 2;
+            $mo = substr $date, index( $format, 'm'   ), 1;
+            $da = substr $date, index( $format, 'd'   ), 1;
+
+            $yr = sprintf "%04d", base2int( $yr, 62 );
+            $mo = sprintf "%02d", base2int( $mo, 62 );
+            $da = sprintf "%02d", base2int( $da, 62 );
+
+            if( (my $pos = index( $format, 'ttt' )) > -1 ) {
+                $tm = substr $date, $pos, 3;
+                ( $hr, $mn, $sc ) = $tm =~ /(.)(.)(.)/;
+                $hr = sprintf "%02d", base2int( $hr, 62 );
+                $mn = sprintf "%02d", base2int( $mn, 62 );
+                $sc = sprintf "%02d", base2int( $sc, 62 );
+                $tm = " $hr:$mn:$sc";
+            }
         }
     }
-    return "$y-$m-$d";
+    return "$yr-$mo-$da$tm";
 }
 
 __END__

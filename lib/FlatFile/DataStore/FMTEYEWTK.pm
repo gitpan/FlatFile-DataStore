@@ -7,7 +7,7 @@ of FlatFile::DataStore.
 
 =head1 VERSION
 
-Discusses FlatFile::DataStore version 0.16.
+Discusses FlatFile::DataStore version 1.00.
 
 =head1 SYNOPSYS
 
@@ -81,9 +81,9 @@ have a pointer to a "next" version, because there isn't one.
 Each record is stored with a I<preamble>, which is a fixed-length
 string of fields containing:
 
- - crud indicator        (flag for created, updated, deleted, etc.)
- - transaction indicator (flag for created, updated, deleted, etc.)
- - transaction number    (incremented when a record is touched)
+ - crud indicator        (flag for created, updated, deleted, oldupd, olddel)
+ - transaction indicator (flag for created, updated, deleted)
+ - transaction number    (incremented when any record is touched)
  - date                  (of the "transaction")
  - key number            (record key sequence number)
  - record length         (in bytes)
@@ -549,7 +549,7 @@ the keyword index might have these entries:
  au the 2,3 101
 
 ("01010101" and "101" represent the bit vector field.  In reality,
-it would likely be in a compressed form.)
+it would likely be in a compressed form, using, e.g., Data::Bvec.)
 
 The example above shows the keywords normalized to lowercase with
 punctuation removed.  This will usually--but not necessarily always--be

@@ -60,7 +60,7 @@ ok( $ds, "FlatFile::DataStore->new()" );
 
 my $indicator = '+';
 my $transind  = '+';
-my $date      = 'WQ6A';
+my $date      = 'WQ6A000';
 my $transint  = 1;
 my $keynum    = 0;
 my $reclen    = 100;
@@ -131,7 +131,7 @@ is( "$value", "$preamble", "preamble()" );
  $value = $record->transind();
  is( $value, "+", "transind()" );
  $value = $record->date();
- is( $value, "2010-06-10", "date()" );
+ is( $value, "2010-06-10 00:00:00", "date()" );
  $value = $record->transnum();
  is( $value, "1", "transnum()" );
  $value = $record->keynum();
