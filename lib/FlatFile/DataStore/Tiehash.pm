@@ -5,7 +5,7 @@
 =head1 NAME
 
 FlatFile::DataStore::Tiehash - Provides routines that are used
-only when tie'ing a hash to a data store.
+only when tie'ing a hash to a datastore.
 
 =head1 SYNOPSYS
 
@@ -16,7 +16,7 @@ only when tie'ing a hash to a data store.
 =head1 DESCRIPTION
 
 FlatFile::DataStore::Tiehash provides the routines that are used only
-when tie'ing a hash to a data store.  It isn't a "true" module; it's
+when tie'ing a hash to a datastore.  It isn't a "true" module; it's
 intended for loading more methods into the FlatFile::DataStore class.
 
 =head1 SYNOPSYS
@@ -69,8 +69,12 @@ record and store that as the "delete record".  If you want the "delete
 record" to contain different information (such as who is deleting it),
 you must call the non-tied delete() method with the datastore object.
 
-Note that record data may be created or updated (i.e., STORE'd) two
+Note that record data may be created or updated (i.e., STORE'd) three
 ways:
+
+As data string (or scalar reference), e.g.,
+
+    $record = $dshash{''} = $record_data;
 
 As a hash reference (so you can supply some user data), e.g.
 
@@ -104,11 +108,11 @@ saves you from having to do something like this equivalent code:
  
 =head1 VERSION
 
-FlatFile::DataStore::Tiehash version 1.00
+FlatFile::DataStore::Tiehash version 1.01
 
 =cut
 
-our $VERSION = '1.00';
+our $VERSION = '1.01';
 
 use 5.008003;
 use strict;
@@ -207,12 +211,12 @@ sub DELETE {
 
 sub CLEAR {
     my $self = shift;
-    croak qq/Clearing the entire data store is not supported/;
+    croak qq/Clearing the entire datastore is not supported/;
 }
 
 #---------------------------------------------------------------------
 # FIRSTKEY() supports tied hash access
-#     The keys in a data store are always 0 .. lastkeynum (integers).
+#     The keys in a datastore are always 0 .. lastkeynum (integers).
 #     Before the first record is added, nextkeynum() returns 0.
 #     In that case, the sub below would return undef.
 
@@ -292,7 +296,7 @@ Brad Baxter, E<lt>bbaxter@cpan.orgE<gt>
 
 =head1 COPYRIGHT AND LICENSE
 
-Copyright (C) 2010 by Brad Baxter
+Copyright (C) 2011 by Brad Baxter
 
 This library is free software; you can redistribute it and/or modify
 it under the same terms as Perl itself, either Perl version 5.8.8 or,

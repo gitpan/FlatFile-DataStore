@@ -136,7 +136,7 @@ my $ok_uri = join( ';' =>
 
 #---------------------------------------------------------------------
 {  # CLEAR():
-   #     /Clearing the entire data store is not supported/
+   #     /Clearing the entire datastore is not supported/
 
     delete_tempfiles( $dir );
 
@@ -146,13 +146,13 @@ my $ok_uri = join( ';' =>
         uri  => $ok_uri,
         };
 
-    # croak qq/Clearing the entire data store is not supported/;
+    # croak qq/Clearing the entire datastore is not supported/;
 
     eval {
         %dshash = ();
     };
-    like( $@, qr/Clearing the entire data store is not supported/,
-              q/STORE() Clearing the entire data store is not supported/ );
+    like( $@, qr/Clearing the entire datastore is not supported/,
+              q/STORE() Clearing the entire datastore is not supported/ );
 
 }
 

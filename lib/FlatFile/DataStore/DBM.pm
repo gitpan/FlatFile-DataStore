@@ -4,8 +4,8 @@
 
 =head1 NAME
 
-FlatFile::DataStore::DBM - Perl module that implements a flat file
-data store with a DBM file key access.
+FlatFile::DataStore::DBM - Perl module that implements a flatfile
+datastore with a DBM file key access.
 
 =head1 SYNOPSYS
 
@@ -16,18 +16,19 @@ data store with a DBM file key access.
     $FlatFile::DataStore::DBM::dbm_parms    = [ O_CREAT|O_RDWR, 0666 ];
     $FlatFile::DataStore::DBM::dbm_lock_ext = ".dir";
 
-    # new datastore object
+    # new object
 
-    tie my %dshash, 'FlatFile::DataStore::DBM', {
-        name        => "dsname",
-        dir         => "/my/datastore/directory",
+    my $obj = tie my %dshash, 'FlatFile::DataStore::DBM', {
+        name => "dsname",
+        dir  => "/my/datastore/directory",
     };
 
     # create a record and retrieve it
+
     my $id     = "testrec1";
     my $record = $dshash{ $id } = { data => "Test record", user => "Test user data" };
 
-    # update it (must have a record to update it)
+    # update it
 
     $record->data( "Updating the test record." );
     $dshash{ $id } = $record;
@@ -36,18 +37,14 @@ data store with a DBM file key access.
 
     delete $dshash{ $id };
 
-    # -or-
-
-    tied(%dshash)->delete({ id => $id, record => $record });
-
     # get its history
 
-    my @records = tied(%dshash)->history( $id );
+    my @records = $obj->history( $id );
 
 =head1 DESCRIPTION
 
 FlatFile::DataStore::DBM implements a tied hash interface to a
-flat file data store.  The hash keys are strings that you provide.
+flatfile datastore.  The hash keys are strings that you provide.
 These keys do not necessarily have to exist as data in the record.
 
 In the case of delete, you're limited in the tied interface -- you
@@ -55,8 +52,11 @@ can't supply a "delete record" (one that has information about the
 delete operation).  Instead, it will simply retrieve the existing
 record and store that as the delete record.
 
-Note that record data may be created or updated (i.e., STORE'd) two
-ways:
+Record data may be created or updated (i.e., STORE'd) three ways:
+
+As a data string (or scalar reference), e.g.,
+
+    $record = $dshash{ $id } = $record_data;
 
 As a hash reference, e.g.
 
@@ -66,25 +66,39 @@ As a record object (record data and user data gotten from object),
 e.g.,
 
     $record->data( $record_data );
-    $recore->user( $user_data );
+    $record->user( $user_data );
     $record = $dshash{ $id } = $record;
 
-Note that in the last line above, the object fetched is not the same as
+In the last line above, the object fetched is not the same as
 the one given to be stored (it has a different preamble).
 
 FWIW, this module is not a subclass of FlatFile::DataStore.  Instead,
 it is a wrapper, so it's a "has a" relationship rather than an "is a"
-one.  But in general, all of the public flat file methods are available
-via the tied object, as illustrated by the history() call in the
-synopsis.
+one.  But many of the public flatfile methods are available via the
+tied object, as illustrated by the history() call in the synopsis.
+These methods include
+
+    retrieve
+    retrieve_preamble
+    locate_record_data
+    history
+    userdata
+    howmany
+    lastkeynum
+    nextkeynum
+
+Note that create(), update(), and delete() are not included in this
+list.  If a datastore is set up using this module, all updates to its
+data should use this module.  This will keep the keys in sync with
+the data.
 
 =head1 VERSION
 
-FlatFile::DataStore::DBM version 1.00
+FlatFile::DataStore::DBM version 1.01
 
 =cut
 
-our $VERSION = '1.00';
+our $VERSION = '1.01';
 
 use 5.008003;
 use strict;
@@ -104,43 +118,114 @@ our $dbm_lock_ext = ".dir";
 
 #---------------------------------------------------------------------
 
-=head1 Tieing the hash
+=head1 DESCRIPTION
+
+=head2 Tieing the hash
 
 Accepts hash ref giving values for C<dir> and C<name>.
 
-    use Fctnl;
     tie my %dshash, 'FlatFile::DataStore::DBM', {
-        name        => $name,
-        dir         => $dir,
+        name => $name,
+        dir  => $dir,
     };
 
-To initialize a new data store, pass the URI as the value of the
+To initialize a new datastore, pass the URI as the value of the
 C<uri> parameter, e.g.,
 
     tie my %dshash, 'FlatFile::DataStore::DBM', {
-        dir         => $dir,
-        name        => $name,
-        uri         => join( ";" =>
-        "http://example.com?name=$name",
-        "desc=My%20Data%20Store",
-        "defaults=medium",
-        "user=8-%20-%7E",
-        "recsep=%0A",
+        dir  => $dir,
+        name => $name,
+        uri  => join( ";" =>
+            "http://example.com?name=$name",
+            "desc=My%20Data%20Store",
+            "defaults=medium",
+            "user=8-%20-%7E",
+            "recsep=%0A",
         ),
     };
 
 (See URI Configuration in FlatFile::DataStore.)
 Also accepts a C<userdata> parameter, which sets the default user
-data for this instance, e.g.,
+data for this instance.
 
 Returns a reference to the FlatFile::DataStore::DBM object.
 
+=head2 Object Methods
+
+#---------------------------------------------------------------------
+
+=head3 get_key( $keynum );
+
+Gets the key associated with a record sequence number (keynum).
+This could be handy if you have a record, but don't have its key
+in the DBM file, e.g.,
+
+    # have a record to update, but forgot its key
+    # (the key isn't necessarily in the record)
+    
+    my $id = tied(%dshash)->get_key( $record->keynum );
+    $dshash{ $id } = $record;
+
 =cut
+
+sub get_key {
+    my( $self, $keynum ) = @_;
+
+    croak qq/Not a keynum: $keynum/
+        unless defined $keynum and $keynum =~ /^[0-9]+$/;
+
+    my $ds    = $self->ds;
+    my $dir   = $ds->dir;
+    my $name  = $ds->name;
+
+    # lock the dbm file and read the key
+    $self->readlock;
+    tie my %dbm_hash, $dbm_package, "$dir/$name", @{$dbm_parms};
+
+    my $key = $dbm_hash{ "_$keynum" };
+
+    untie %dbm_hash;
+    $self->unlock;
+
+    $key;  # returned
+}
+
+#---------------------------------------------------------------------
+
+=head3 get_keynum( $key );
+
+Gets the record sequence number (keynum) associated with a key.  Don't
+have a good use case yet -- included this method as a complement to
+get_key().
+
+=cut
+
+sub get_keynum {
+    my( $self, $key ) = @_;
+
+    croak qq/Unsupported key format: $key/ if $key =~ /^_[0-9]+$/;
+
+    my $ds    = $self->ds;
+    my $dir   = $ds->dir;
+    my $name  = $ds->name;
+
+    # lock the dbm file and read the keynum
+    $self->readlock;
+    tie my %dbm_hash, $dbm_package, "$dir/$name", @{$dbm_parms};
+
+    my $keynum = $dbm_hash{ $key };
+
+    untie %dbm_hash;
+    $self->unlock;
+
+    $keynum;  # returned
+}
 
 #---------------------------------------------------------------------
 # accessors
-
 # the following are required attributes, so simple accessors are okay
+#
+# Private methods.
 
 sub ds            {for($_[0]->{ds           }){$_=$_[1]if@_>1;return$_}}
 sub dbm_lock_file {for($_[0]->{dbm_lock_file}){$_=$_[1]if@_>1;return$_}}
@@ -209,15 +294,11 @@ sub FETCH {
 #         1. able_baker_charlie => 257
 #         2. _257 => able_baker_charlie
 #
-# Note: some croak's below are positioned between writelock() and
-# unlock().  On linux systems that don't allow a process to have
-# multiple locks on the same file, if you trap those croaks in an
-# eval{} (like for testing), the program will hang waiting for a
-# lock.  For that reason, where there's a croak like that, we
-# explicitly unlock (and untie).  It think what's happening is that
-# the filehandle isn't being let go of because it is stored in the
-# object.  That's a guess that I haven't proved yet.  It might be a
-# different reason.
+# Note: the $error variable is intended to avoid having a croak
+# between writelock() and unlock().  On linux systems that don't
+# allow a process to have multiple locks on the same file, if you
+# trap those croaks in an eval{} (like for testing), the program
+# will hang waiting for a lock.
 #
 
 sub STORE {
@@ -229,6 +310,8 @@ sub STORE {
     my $ds    = $self->ds;
     my $dir   = $ds->dir;
     my $name  = $ds->name;
+
+    my $error;
 
     # lock the dbm file and read the keynum
     $self->writelock;
@@ -254,14 +337,12 @@ sub STORE {
         elsif( $reftype =~ /Record/ ) {
 
             # trying to update a record using the wrong key?
-            unless( $keynum == $parms->keynum ) {
-                # see note above about croak's
-                untie %dbm_hash;
-                $self->unlock;
-                croak qq/Record key number doesn't match key/;
+            if( $keynum != $parms->keynum ) {
+                $error = qq/Record key number doesn't match key/;
             }
-
-            $record = $ds->update( $parms );
+            else {
+                $record = $ds->update( $parms );
+            }
         }
 
         # hash, e.g., {data=>'record data',user=>'user data'}
@@ -273,10 +354,7 @@ sub STORE {
         }
 
         else {
-            # see note above about croak's
-            untie %dbm_hash;
-            $self->unlock;
-            croak qq/Unsupported ref type: $reftype/;
+            $error = qq/Unsupported ref type: $reftype/;
         }
 
     }
@@ -296,21 +374,22 @@ sub STORE {
         }
 
         else {
-            # see note above about croak's
-            untie %dbm_hash;
-            $self->unlock;
-            croak qq/Unsupported ref type: $reftype/;
+            $error = qq/Unsupported ref type: $reftype/;
         }
 
         # create succeeded, let's store the key
-        for( $record->keynum ) {
-            $dbm_hash{ $key  } = $_;
-            $dbm_hash{ "_$_" } = $key;
+        unless( $error ) {
+            for( $record->keynum ) {
+                $dbm_hash{ $key  } = $_;
+                $dbm_hash{ "_$_" } = $key;
+            }
         }
     }
 
     untie %dbm_hash;
     $self->unlock;
+
+    croak $error if $error;
 
     $record;  # returned
 
@@ -363,7 +442,7 @@ sub DELETE {
 #     accidental %h = ();
 
 sub CLEAR {
-    croak qq/Clearing the entire data store is not supported/;
+    croak qq/Clearing the entire datastore is not supported/;
 }
 
 #---------------------------------------------------------------------
@@ -419,7 +498,7 @@ sub NEXTKEY {
 #---------------------------------------------------------------------
 # SCALAR() supports tied hash access
 #     Here we're bypassing the dbm file altogether and simply getting
-#     the number of non-deleted records in the data store.  This
+#     the number of non-deleted records in the datastore.  This
 #     should be the same as the number of (logical) entries in the
 #     dbm hash.
 
@@ -523,57 +602,6 @@ sub unlock {
     my $fh   = $self->locked;
 
     close $fh or croak qq/Problem closing $file: $!/;
-}
-
-#---------------------------------------------------------------------
-# get_key()
-#     get the key associated with a record sequence number (keynum)
-
-sub get_key {
-    my( $self, $keynum ) = @_;
-
-    croak qq/Not a keynum: $keynum/
-        unless defined $keynum and $keynum =~ /^[0-9]+$/;
-
-    my $ds    = $self->ds;
-    my $dir   = $ds->dir;
-    my $name  = $ds->name;
-
-    # lock the dbm file and read the key
-    $self->readlock;
-    tie my %dbm_hash, $dbm_package, "$dir/$name", @{$dbm_parms};
-
-    my $key = $dbm_hash{ "_$keynum" };
-
-    untie %dbm_hash;
-    $self->unlock;
-
-    $key;  # returned
-}
-
-#---------------------------------------------------------------------
-# get_keynum()
-#     get the keynum associated with a key
-
-sub get_keynum {
-    my( $self, $key ) = @_;
-
-    croak qq/Unsupported key format: $key/ if $key =~ /^_[0-9]+$/;
-
-    my $ds    = $self->ds;
-    my $dir   = $ds->dir;
-    my $name  = $ds->name;
-
-    # lock the dbm file and read the keynum
-    $self->readlock;
-    tie my %dbm_hash, $dbm_package, "$dir/$name", @{$dbm_parms};
-
-    my $keynum = $dbm_hash{ $key };
-
-    untie %dbm_hash;
-    $self->unlock;
-
-    $keynum;  # returned
 }
 
 #---------------------------------------------------------------------

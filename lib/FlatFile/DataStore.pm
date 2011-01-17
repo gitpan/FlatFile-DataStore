@@ -4,8 +4,8 @@
 
 =head1 NAME
 
-FlatFile::DataStore - Perl module that implements a flat file data
-store.
+FlatFile::DataStore - Perl module that implements a flatfile
+datastore.
 
 =head1 SYNOPSYS
 
@@ -46,17 +46,17 @@ store.
 
 =head1 DESCRIPTION
 
-FlatFile::DataStore implements a simple flat file datastore.  When you
-create (store) a new record, it is appended to the flat file.  When you
-update an existing record, the existing entry in the flat file is
-flagged as updated, and the updated record is appended to the flat
-file.  When you delete a record, the existing entry is flagged as
-deleted, and a "delete record" is I<appended> to the flat file.
+FlatFile::DataStore implements a simple flatfile datastore.  When you
+create (store) a new record, it is appended to the flatfile.  When you
+update an existing record, the existing entry in the flatfile is
+flagged as updated, and the updated record is appended to the
+flatfile.  When you delete a record, the existing entry is flagged as
+deleted, and a "delete record" is I<appended> to the flatfile.
 
-The result is that all versions of a record are retained in the data
-store, and running a history will return all of them.  Another result
-is that each record in the datastore represents a transaction: create,
-update, or delete.
+The result is that all versions of a record are retained in the
+datastore, and running a history will return all of them.  Another
+result is that each record in the datastore represents a transaction:
+create, update, or delete.
 
 Methods support the following actions:
 
@@ -78,11 +78,11 @@ See FlatFile::DataStore::Tiehash for a tied interface.
 
 =head1 VERSION
 
-FlatFile::DataStore version 1.00
+FlatFile::DataStore version 1.01
 
 =cut
 
-our $VERSION = '1.00';
+our $VERSION = '1.01';
 
 use 5.008003;
 use strict;
@@ -1679,8 +1679,8 @@ sub which_datafile {
 # 
 # =head2 sub all_datafiles(), called by validate utility
 # 
-# Returns an array of paths for all of the data files in the data
-# store.
+# Returns an array of paths for all of the data files in the
+# datastore.
 # 
 # Private method.
 # 
@@ -2478,14 +2478,6 @@ next version of the record is stored.  This number combined with the
 nextseek value gives the beginning location of the next version of the
 record's data.
 
-You would have a nextfnum and nextseek in a preamble when it's a
-previous version of a record whose current version appears later in the
-datastore.  While thisfnum and thisseek are critical for all record
-retrievals, prevfnum, prevseek, nextfnum, and nextseek are only needed
-for getting a record's history.  They are also used during a migration
-to help validate that all the data (and transactions) were migrated
-intact.
-
 =item nextseek (optional)
 
 The nextseek parameter specifies how the "next" seek positions are
@@ -2494,6 +2486,14 @@ thisseek (see thisseek above for more details).  It has the form
 C<nextseek=length-base>, e.g.,
 
     nextseek=5-62
+
+You would have a nextfnum and nextseek in a preamble when it's a
+previous version of a record whose current version appears later in the
+datastore.  While thisfnum and thisseek are critical for all record
+retrievals, prevfnum, prevseek, nextfnum, and nextseek are only needed
+for getting a record's history.  They are also used during a migration
+to help validate that all the data (and transactions) were migrated
+intact.
 
 =item user
 
@@ -2675,7 +2675,7 @@ datastore's files.
 =item recsep
 
 The recsep parameter gives the ascii character(s) that will make up the
-record separator.  The "flat file" stategy suggests that these
+record separator.  The "flatfile" stategy suggests that these
 characters ought to match what your OS considers to be a "newline".
 But in fact, you could use any string of ascii characters.
 
@@ -2834,7 +2834,7 @@ Brad Baxter, E<lt>bbaxter@cpan.orgE<gt>
 
 =head1 COPYRIGHT AND LICENSE
 
-Copyright (C) 2010 by Brad Baxter
+Copyright (C) 2011 by Brad Baxter
 
 This library is free software; you can redistribute it and/or modify
 it under the same terms as Perl itself, either Perl version 5.8.8 or,

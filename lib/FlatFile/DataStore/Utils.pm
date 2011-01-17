@@ -16,7 +16,7 @@ use Math::Int2Base qw( base_chars int2base base2int );
 =head1 NAME
 
 FlatFile::DataStore::Utils - a collection of utility routines for
-FlatFile::DataStore data stores.
+FlatFile::DataStore datastores.
 
 =cut
 
@@ -24,18 +24,18 @@ FlatFile::DataStore data stores.
 
 =head1 VERSION
 
-VERSION: 1.00
+VERSION: 1.01
 
 =cut
 
-our $VERSION = '1.00';
+our $VERSION = '1.01';
 
 #---------------------------------------------------------------------
 
 =head1 EXPORTS
 
 Nothing is exported by default.  The following may be exported
-individually; all three may be exported using the C<:all> tag:
+individually; all of them may be exported using the C<:all> tag:
 
  - migrate
  - migrate_nohist
@@ -94,23 +94,23 @@ BEGIN {
 
 This module provides
 
-- validate(), to validate a data store, checking that it can be
+- validate(), to validate a datastore, checking that it can be
 traversed and that its past record data has not changed, and 
 creating history and transaction files for comparison purposes.
 
-- migrate(), to migrate a data store to a new data store. Use cases:
+- migrate(), to migrate a datastore to a new datastore. Use cases:
 
-  - The data has outgrown the data store as originally configured
+  - The data has outgrown the datastore as originally configured
   - You want a better configuration than originally conceived
 
-- migrate_nohist(), to migrate a data store to a new data store
+- migrate_nohist(), to migrate a datastore to a new datastore
 without any update history and without any deleted records.  This is
 normally discouraged (since the spirit of the module is to retain
 all history of activity), but it has its uses.
 
 - compare(), to compare the files that validate() creates for
-one data store to the files that validate() creates for a second
-data store (following a migrate(), most likely).  If these files
+one datastore to the files that validate() creates for a second
+datastore (following a migrate(), most likely).  If these files
 (history, transaction, md5) are exactly equal, then the two data
 stores are equivalent, i.e., they both contain exactly the same
 records, even though their data files, etc., may be very
@@ -132,11 +132,11 @@ detailed below.
 
 =head4 $dir
 
-The directory of the data store.
+The directory of the datastore.
 
 =head4 $name
 
-The name of the data store.
+The name of the datastore.
 
 =cut
 
@@ -251,25 +251,25 @@ sub validate {
 
 =head4 $from_dir
 
-The directory of the data store we're migrating from.
+The directory of the datastore we're migrating from.
 
 =head4 $from_name
 
-The name of the data store we're migrating from.
+The name of the datastore we're migrating from.
 
 =head4 $to_dir
 
-The directory of the data store we're migrating to.
+The directory of the datastore we're migrating to.
 
 =head4 $to_name
 
-The name of the data store we're migrating to.
+The name of the datastore we're migrating to.
 
 =head4 $to_uri
 
-The uri of the data store we're migrating to.  If given, a new data
+The uri of the datastore we're migrating to.  If given, a new data
 store will be initialized.  If this parameter is not given, it is
-assumed that the new data store has already been initialized.
+assumed that the new datastore has already been initialized.
 
 =cut
 
@@ -424,25 +424,25 @@ sub migrate {
 
 =head4 $from_dir
 
-The directory of the data store we're migrating from.
+The directory of the datastore we're migrating from.
 
 =head4 $from_name
 
-The name of the data store we're migrating from.
+The name of the datastore we're migrating from.
 
 =head4 $to_dir
 
-The directory of the data store we're migrating to.
+The directory of the datastore we're migrating to.
 
 =head4 $to_name
 
-The name of the data store we're migrating to.
+The name of the datastore we're migrating to.
 
 =head4 $to_uri
 
-The uri of the data store we're migrating to.  If given, a new data
+The uri of the datastore we're migrating to.  If given, a new data
 store will be initialized.  If this parameter is not given, it is
-assumed that the new data store has already been initialized.
+assumed that the new datastore has already been initialized.
 
 This routine will not keep any record history and will not migrate
 deleted records.
@@ -452,7 +452,7 @@ Intended for post-migration comparisons, this routine writes a
 The first integer is the record sequence number from the C<from_ds>,
 and the second is from the C<to_ds>.  Using these, it should be
 possible to compare the user data and record data md5 signature from
-both data stores to verify that the data was migrated completely.
+both datastores to verify that the data was migrated completely.
 
 =cut
 
@@ -515,27 +515,27 @@ sub migrate_nohist {
 =head2 compare( $from_dir, $from_name, $to_dir, $to_name )
 
 This routine compares the files written by validate() for
-each of the data stores to verify that after migration, the
-second data store contains exactly the same information as
+each of the datastores to verify that after migration, the
+second datastore contains exactly the same information as
 the first.
 
 =head3 Parameters:
 
 =head4 $from_dir
 
-The directory of the data store we migrated from.
+The directory of the datastore we migrated from.
 
 =head4 $from_name
 
-The name of the data store we migrated from.
+The name of the datastore we migrated from.
 
 =head4 $to_dir
 
-The directory of the data store we migrated to.
+The directory of the datastore we migrated to.
 
 =head4 $to_name
 
-The name of the data store we migrated to.
+The name of the datastore we migrated to.
 
 =cut
 

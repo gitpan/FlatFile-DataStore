@@ -7,7 +7,7 @@ of FlatFile::DataStore.
 
 =head1 VERSION
 
-Discusses FlatFile::DataStore version 1.00.
+Discusses FlatFile::DataStore version 1.01.
 
 =head1 SYNOPSYS
 
@@ -46,21 +46,21 @@ better use of it.
 
 =head2 Overview
 
-FlatFile::DataStore implements a simple flat file data store.  When you
-create (store) a new record, it is appended to the flat file.  When you
-update an existing record, the existing entry in the flat file is
-flagged as updated, and the updated record is appended to the flat
-file.  When you delete a record, the existing entry is flagged as
-deleted, and a "delete record" is I<appended> to the flat file.
+FlatFile::DataStore implements a simple flatfile datastore.  When you
+create (store) a new record, it is appended to the flatfile.  When you
+update an existing record, the existing entry in the flatfile is
+flagged as updated, and the updated record is appended to the
+flatfile.  When you delete a record, the existing entry is flagged as
+deleted, and a "delete record" is I<appended> to the flatfile.
 
 The result is that all versions of a record are retained in the data
 store, and running a history will return all of them.  Another result
-is that each record in the data store represents a transaction: create,
+is that each record in the datastore represents a transaction: create,
 update, or delete.
 
 =head2 Data Store Files and Directories
 
-There are four types of files that make up a data store:
+There are four types of files that make up a datastore:
 
  uri file     (1)         ... essentially the configuration file
  key file(s)  (1 or more) ... index(es) into the data file(s)
@@ -98,9 +98,9 @@ string of fields containing:
 *That is, data about the record not stored in the record.
 
 The formats and sizes of these fixed-length fields may be configured
-when the data store is first defined, and will determine certain
-constraints on the size of the data store.  For example, if the file
-number is base-10 and 2 bytes in size, then the data store may have
+when the datastore is first defined, and will determine certain
+constraints on the size of the datastore.  For example, if the file
+number is base-10 and 2 bytes in size, then the datastore may have
 up to 99 data files.  And if the seek position is base-10 and 9 bytes
 in size, then each data file may contain up to 1 Gig of data.
 
@@ -108,16 +108,16 @@ Number bases larger than base-10 (up to base-36 for file numbers and up
 to base-62 for other numbers) may be used to help shorten the length of
 the preamble string.
 
-Again, a data store will have the following files:
+Again, a datastore will have the following files:
 
  - uri  file,    contains the uri, which defines the configuration parameters
                  after initialization, it contains a generic serialized datastore object
                  ('generic' because the object does not include the 'dir' attribute)
- - toc  file(s), contain information about the data store and each data file
+ - toc  file(s), contain information about the datastore and each data file
  - key  file(s), contain pointers to every current record version
  - data file(s), contain all the versions of all the records
 
-If the data store is small, it might have only one toc, key, and/or
+If the datastore is small, it might have only one toc, key, and/or
 data file.
 
 If C<dirlev> (see below) is 0 or undefined, the toc, key, or data files
@@ -199,12 +199,12 @@ file and so the name will be C<name.toc> instead of, e.g., C<name.1.toc>.
 If C<keymax> is not defined, there will never be more than one key
 file and so the name will be C<name.key> instead of, e.g., C<name.1.key>.
 
-Different data stores may coexist in the same top-level directory--they
+Different datastores may coexist in the same top-level directory--they
 just have to have different names.
 
 To retrieve a record, one must know the data file number and the seek
 position into that data file, or the record's key sequence number (the
-order it was added to the data store).  With a sequence number, the
+order it was added to the datastore).  With a sequence number, the
 file number and seek position can be looked up in a key file, so these
 sequence numbers are called "key numbers" or C<keynum>.
 
@@ -218,9 +218,9 @@ Methods support the following actions:
 
 Scripts supplied in the distribution perform:
 
- - validation of a data store
- - migration of data store records to newly configured data store
- - comparison of pre-migration and post-migration data stores
+ - validation of a datastore
+ - migration of datastore records to newly configured datastore
+ - comparison of pre-migration and post-migration datastores
 
 =head2 Motivation
 
@@ -233,7 +233,7 @@ Several factors motivated the development of this module:
  - the ability to store any sort of data: binary or text in any encoding
  - the desire for a relatively simple file structure
  - the desire for the data to be reasonably easily read by a human
- - the ability to easily increase the data store size (through migration)
+ - the ability to easily increase the datastore size (through migration)
 
 The key file makes it easy and efficient to retrieve the current
 version of a record--you just need the record's key sequence number.
@@ -248,7 +248,7 @@ while still retaining efficient reading and writing.
 users might break up the record into parts, store them as multiple data
 store records and store a "directory" record to guide the reassembly.
 While that's outside the scope of this module, that sort of scheme is
-accommodated by the fact that the data store doesn't care if the record
+accommodated by the fact that the datastore doesn't care if the record
 data is not a complete unit of a known format.)
 
 When a record is created, it is assigned a key sequence number (keynum)
@@ -262,9 +262,9 @@ reporting.
 
 Since record retrieval is by seek position and record length in bytes,
 any sequence of bytes may be stored and retrieved.  Disparate types of
-data may be stored in the same data store.
+data may be stored in the same datastore.
 
-Outside of the record data itself, the data store file structure uses
+Outside of the record data itself, the datastore file structure uses
 ascii characters for the key file, toc file, and preambles.  It appends
 a record separator, typically a newline character, after each record.
 This is intended to make the file structure relatively simple and more
@@ -273,10 +273,10 @@ simple curiosity, etc.
 
 Migration scripts are included in the module distribution.  If your
 initial configuration values prove too small to accommodate your data,
-you can configure a new data store with larger values and migrate all
-the records to the new data store.  All of the transaction and sequence
+you can configure a new datastore with larger values and migrate all
+the records to the new datastore.  All of the transaction and sequence
 numbers remain the same; the record data and user data are identical;
-and interfacing with the new data store vs. the old one should be
+and interfacing with the new datastore vs. the old one should be
 completely transparent to programs using the FlatFile::DataStore
 module.
 
@@ -292,11 +292,11 @@ module.
     - return the record object
  Update: previous preamble required (and it must not have changed)
     - create a record object (with a previous preamble)
-    - write the record (updating the previous in the data store)
+    - write the record (updating the previous in the datastore)
     - return the record object
  Delete: previous preamble required (and it must not have changed)
     - create a record object (with a previous preamble)
-    - write the record (updating the previous in the data store)
+    - write the record (updating the previous in the datastore)
     - return the record object
 
 Some notes about the "previous" preamble:
@@ -305,28 +305,28 @@ In order to protect data from conflicting concurrent updates, you may
 not update or delete a record without first retrieving it from the data
 store.  Supplying the previous preamble along with the new record data
 is proof that you did this.  Before the new record is written, the
-supplied previous preamble is compared with what's in the data store,
+supplied previous preamble is compared with what's in the datastore,
 and if they are not exactly the same, it means that someone else
 retrieved and updated/deleted the record between the time you read it
 and the time you tried to update/delete it.
 
 So unless you supply a previous preamble and unless the one you supply
-matches exactly the one in the data store, your update/delete will not
+matches exactly the one in the datastore, your update/delete will not
 be accepted--you will have to re-retrieve the new version of the record
 (getting a more recent preamble) and apply your updates to it.
 
 =head2 Scaling to infinity (and beyond)
 
-Past experience designing data stores suggests that once a design is in
+Past experience designing datastores suggests that once a design is in
 place, you will always want to throw a lot more data at it that you
 thought you were going to.
 
 So in this module, I want to make an extra effort to accommodate all the
-data anyone might want to put in a data store.  For that reason, any
+data anyone might want to put in a datastore.  For that reason, any
 file that increases in size as data is stored (toc file, key file, data
 file) may be split into multiple files.  Logically, these are one entity:
 the toc files are one table of contents, the key files are one index,
-the data files make up a single data store.  But by allowing them to be
+the data files make up a single datastore.  But by allowing them to be
 split up, the file sizes can be kept manageable.
 
 Similarly, since the number of files increases, and too many files in a
@@ -339,7 +339,7 @@ directories.
 
 To keep things simpler, the specs for the data file number can be
 applied to the toc files, the key files, and also to the toc, key, and
-data directories.  That is, if the data store designer specifies that
+data directories.  That is, if the datastore designer specifies that
 the data file number should be two base-36 characters (so he can
 accommodate up to 1295 files), that should be more than sufficient to
 use for toc's, key's, and dir's.
@@ -436,11 +436,11 @@ Random access by line is accommodated because we know the length of each line an
  - line 2 is details for example.2.data
  - etc. 
 
-=head2 defining a data store
+=head2 defining a datastore
 
 (To be completed.)  See URI Configuration in FlatFile::DataStore.
 
-=head2 designing a program to analyze a data store definition (uri)
+=head2 designing a program to analyze a datastore definition (uri)
 
 Validation:
 
@@ -474,17 +474,17 @@ Analysis:
 See utils/flatfile-datastore.cgi (which is young and rough and doesn't
 answer all of the above questions yet).
 
-=head2 validating a data store
+=head2 validating a datastore
 
  - Include average record size, biggest record, smallest record, size breakdown
 
 See Flatfile::DataStore::Utils.
 
-=head2 migrating a data store
+=head2 migrating a datastore
 
 See Flatfile::DataStore::Utils and utils/migrate_validate.
 
-=head2 interating over the data store transactions
+=head2 interating over the datastore transactions
 
 See Flatfile::DataStore::Utils.
 
@@ -510,13 +510,13 @@ record using this id number.
 In addition, I'll want to be able to perform queries with keywords and
 or phrases that will return lists of records that match the queries.
 
-(Note: The scheme outlined below uses flat files. BerkeleyDB::Btree
+(Note: The scheme outlined below uses flatfiles. BerkeleyDB::Btree
 would be a likely alternative. The basic data fields would still be
 pertinent, but they would be the keys and the bit strings, the values.)
 
 =head3 Keywords
 
-One plan for keyword indexes would have flat files with four fields:
+One plan for keyword indexes would have flatfiles with four fields:
 
  - index tag
  - keyword
@@ -560,14 +560,14 @@ index files would need to be in sorted order and kept that way as
 records are added, updated, and deleted.
 
 The current plan is to store the bit vector field in a FlatFile
-DataStore Lite data store (since they can get large), and store
-the keynum in the index flat file.  Then we should be able to
+DataStore Lite datastore (since they can get large), and store
+the keynum in the index flatfile.  Then we should be able to
 use Tie::File to update and splice in changes, keeping the files
 sorted.  See directory structure below.
 
 =head3 Phrases
 
-A similar plan for phrase indexes would have flat files with three
+A similar plan for phrase indexes would have flatfiles with three
 I<logical> fields similar to the above:
 
  - index tag
@@ -612,7 +612,7 @@ of a field.
 =head3 Headings
 
 This idea is still nebulous.  It is a response to the shortcomings
-of the phrase indexes.  I I<think> it may end up being a data store
+of the phrase indexes.  I I<think> it may end up being a datastore
 itself that is then keyword (and possibly phrase?) indexed.
 
 =head3 Facets

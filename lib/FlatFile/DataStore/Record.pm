@@ -4,8 +4,8 @@
 
 =head1 NAME
 
-FlatFile::DataStore::Record - Perl module that implements a flat
-file data store record class.
+FlatFile::DataStore::Record - Perl module that implements a flatfile
+datastore record class.
 
 =head1 SYNOPSYS
 
@@ -41,19 +41,19 @@ file data store record class.
 
 =head1 DESCRIPTION
 
-FlatFile::DataStore::Record is a Perl module that implements a flat
-file data store record class.  This class defines objects used by
+FlatFile::DataStore::Record is a Perl module that implements a flatfile
+datastore record class.  This class defines objects used by
 FlatFile::DataStore.  You will likely not ever call new() yourself,
 (FlatFile::DataStore::create() would, e.g., do that) but you will
 likely call the accessors.
 
 =head1 VERSION
 
-FlatFile::DataStore::Record version 1.00
+FlatFile::DataStore::Record version 1.01
 
 =cut
 
-our $VERSION = '1.00';
+our $VERSION = '1.01';
 
 use 5.008003;
 use strict;
@@ -203,7 +203,7 @@ Brad Baxter, E<lt>bbaxter@cpan.orgE<gt>
 
 =head1 COPYRIGHT AND LICENSE
 
-Copyright (C) 2009 by Brad Baxter
+Copyright (C) 2011 by Brad Baxter
 
 This library is free software; you can redistribute it and/or modify
 it under the same terms as Perl itself, either Perl version 5.8.8 or,

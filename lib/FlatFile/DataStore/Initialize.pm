@@ -5,7 +5,7 @@
 =head1 NAME
 
 FlatFile::DataStore::Initialize - Provides routines that are used
-only when initializing a data store
+only when initializing a datastore
 
 =head1 SYNOPSYS
 
@@ -16,17 +16,17 @@ only when initializing a data store
 =head1 DESCRIPTION
 
 FlatFile::DataStore::Initialize provides the routines that
-are used only when a data store is initialized.  It isn't a
+are used only when a datastore is initialized.  It isn't a
 "true" module; it's intended for loading more methods in the
 FlatFile::DataStore class.
 
 =head1 VERSION
 
-FlatFile::DataStore::Initialize version 1.00
+FlatFile::DataStore::Initialize version 1.01
 
 =cut
 
-our $VERSION = '1.00';
+our $VERSION = '1.01';
 
 use 5.008003;
 use strict;
@@ -45,7 +45,7 @@ use Data::Omap qw( :ALL );
 # burst_query(), called by init() to parse the datastore's uri
 #     Takes a hash ref to the %Preamble attribute hash, so it can
 #     know which parts of the uri belong in the preamble.
-#     Then it gets the uri from the data store object and parses it.
+#     Then it gets the uri from the datastore object and parses it.
 #     It loads all of the values it gets (and generates) in to a
 #     hash ref which it returns.
 #
@@ -62,7 +62,7 @@ sub burst_query {
     my $pos   = 0;
     my %parms;
     my $load_parms = sub {
-        my( $name, $val ) = split /=/, $_, 2;
+        my( $name, $val ) = split /=/, $_[0], 2;
 
         $name = uri_unescape( $name );
         $val  = uri_unescape( $val );
@@ -95,7 +95,7 @@ sub burst_query {
 
 #---------------------------------------------------------------------
 # defaults()
-#     This routine provides some default values for the data store
+#     This routine provides some default values for the datastore
 #     configuration uri.  It takes the default you want, one of
 #     xsmall  xsmall_nohist
 #      small   small_nohist
@@ -409,7 +409,7 @@ Brad Baxter, E<lt>bbaxter@cpan.orgE<gt>
 
 =head1 COPYRIGHT AND LICENSE
 
-Copyright (C) 2010 by Brad Baxter
+Copyright (C) 2011 by Brad Baxter
 
 This library is free software; you can redistribute it and/or modify
 it under the same terms as Perl itself, either Perl version 5.8.8 or,

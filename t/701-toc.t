@@ -85,7 +85,7 @@ ok( $ds, "FlatFile::DataStore->new()" );
           datastore => $ds,
         } );
 
-    # values for an empty data store
+    # values for an empty datastore
 
     my $try = $toc->datastore;
     is( "$try", "$ds", "datastore()" );

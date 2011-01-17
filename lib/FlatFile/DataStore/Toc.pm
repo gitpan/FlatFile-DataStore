@@ -4,8 +4,8 @@
 
 =head1 NAME
 
-FlatFile::DataStore::Toc - Perl module that implements a flat file
-data store TOC (table of contents) class.
+FlatFile::DataStore::Toc - Perl module that implements a flatfile
+datastore TOC (table of contents) class.
 
 =head1 SYNOPSYS
 
@@ -26,19 +26,19 @@ data store TOC (table of contents) class.
 
 =head1 DESCRIPTION
 
-FlatFile::DataStore::Toc is a Perl module that implements a flat file
-data store TOC (table of contents) class.
+FlatFile::DataStore::Toc is a Perl module that implements a flatfile
+datastore TOC (table of contents) class.
 
 This module is used by FlatFile::DataStore.  You will likely never call
 any of it's methods yourself.
 
 =head1 VERSION
 
-FlatFile::DataStore::Toc version 1.00
+FlatFile::DataStore::Toc version 1.01
 
 =cut
 
-our $VERSION = '1.00';
+our $VERSION = '1.01';
 
 use 5.008003;
 use strict;
@@ -386,7 +386,7 @@ Brad Baxter, E<lt>bbaxter@cpan.orgE<gt>
 
 =head1 COPYRIGHT AND LICENSE
 
-Copyright (C) 2010 by Brad Baxter
+Copyright (C) 2011 by Brad Baxter
 
 This library is free software; you can redistribute it and/or modify
 it under the same terms as Perl itself, either Perl version 5.8.8 or,

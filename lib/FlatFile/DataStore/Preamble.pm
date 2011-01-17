@@ -4,8 +4,8 @@
 
 =head1 NAME
 
-FlatFile::DataStore::Preamble - Perl module that implements a flat
-file data store preamble class.
+FlatFile::DataStore::Preamble - Perl module that implements a flatfile
+datastore preamble class.
 
 =head1 SYNOPSYS
 
@@ -37,24 +37,24 @@ file data store preamble class.
 
 =head1 DESCRIPTION
 
-FlatFile::DataStore::Preamble - Perl module that implements a flat file
-data store preamble class.  This class defines objects used by
+FlatFile::DataStore::Preamble - Perl module that implements a flatfile
+datastore preamble class.  This class defines objects used by
 FlatFile::DataStore::Record and FlatFile::DataStore.  You will
 probably not ever call new() yourself, but you might call some of the
 accessors either directly or via a FF::DS::Record object;
 
 A "preamble" is a string of fixed-length fields that precedes every
 record in a FlatFile::DataStore data file.  In addition, this string
-constitutes the entry in the data store key file for each current
+constitutes the entry in the datastore key file for each current
 record.
 
 =head1 VERSION
 
-FlatFile::DataStore::Preamble version 1.00
+FlatFile::DataStore::Preamble version 1.01
 
 =cut
 
-our $VERSION = '1.00';
+our $VERSION = '1.01';
 
 use 5.008003;
 use strict;
@@ -348,7 +348,7 @@ Brad Baxter, E<lt>bbaxter@cpan.orgE<gt>
 
 =head1 COPYRIGHT AND LICENSE
 
-Copyright (C) 2010 by Brad Baxter
+Copyright (C) 2011 by Brad Baxter
 
 This library is free software; you can redistribute it and/or modify
 it under the same terms as Perl itself, either Perl version 5.8.8 or,
