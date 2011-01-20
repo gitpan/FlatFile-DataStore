@@ -725,6 +725,13 @@ my $ok_uri = join( ';' =>
         uri  => $ok_uri,
         });
 
+    eval {
+        $ds->retrieve( 0 );
+    };
+
+    like( $@, qr/Record doesn't exist: 0/,
+              q/retrieve() Record doesn't exist: $keynum/ );
+
     $ds->create({ data => "This is a test" });  # keynum 0
     $ds->create({ data => "This is a test" });  # keynum 1
 

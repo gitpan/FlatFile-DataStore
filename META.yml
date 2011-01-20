@@ -1,6 +1,6 @@
 --- #YAML:1.0
 name:               FlatFile-DataStore
-version:            1.01
+version:            1.02
 abstract:           Perl module that implements a flatfile
 author:
     - Brad Baxter <bbaxter@cpan.org>

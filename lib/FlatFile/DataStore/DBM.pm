@@ -76,8 +76,11 @@ FWIW, this module is not a subclass of FlatFile::DataStore.  Instead,
 it is a wrapper, so it's a "has a" relationship rather than an "is a"
 one.  But many of the public flatfile methods are available via the
 tied object, as illustrated by the history() call in the synopsis.
+
 These methods include
 
+    name
+    dir
     retrieve
     retrieve_preamble
     locate_record_data
@@ -94,11 +97,11 @@ the data.
 
 =head1 VERSION
 
-FlatFile::DataStore::DBM version 1.01
+FlatFile::DataStore::DBM version 1.02
 
 =cut
 
-our $VERSION = '1.01';
+our $VERSION = '1.02';
 
 use 5.008003;
 use strict;
@@ -174,7 +177,7 @@ sub get_key {
     croak qq/Not a keynum: $keynum/
         unless defined $keynum and $keynum =~ /^[0-9]+$/;
 
-    my $ds    = $self->ds;
+    my $ds    = $self->datastore;
     my $dir   = $ds->dir;
     my $name  = $ds->name;
 
@@ -205,7 +208,7 @@ sub get_keynum {
 
     croak qq/Unsupported key format: $key/ if $key =~ /^_[0-9]+$/;
 
-    my $ds    = $self->ds;
+    my $ds    = $self->datastore;
     my $dir   = $ds->dir;
     my $name  = $ds->name;
 
@@ -227,7 +230,7 @@ sub get_keynum {
 #
 # Private methods.
 
-sub ds            {for($_[0]->{ds           }){$_=$_[1]if@_>1;return$_}}
+sub datastore     {for($_[0]->{datastore    }){$_=$_[1]if@_>1;return$_}}
 sub dbm_lock_file {for($_[0]->{dbm_lock_file}){$_=$_[1]if@_>1;return$_}}
 sub locked        {for($_[0]->{locked       }){$_=$_[1]if@_>1;return$_}}
 
@@ -244,7 +247,7 @@ sub TIEHASH {
     my $name  = $ds->name;
 
     my $self = {
-        ds            => $ds,
+        datastore     => $ds,
         dbm_lock_file => "$dir/$name$dbm_lock_ext",
     };
 
@@ -261,7 +264,7 @@ sub FETCH {
     # block efforts to fetch a "_keynum" entry
     croak qq/Unsupported key format: $key/ if $key =~ /^_[0-9]+$/;
 
-    my $ds    = $self->ds;
+    my $ds    = $self->datastore;
     my $dir   = $ds->dir;
     my $name  = $ds->name;
 
@@ -307,7 +310,7 @@ sub STORE {
     # block efforts to store to "_keynum" entries
     croak qq/Unsupported key format: $key/ if $key =~ /^_[0-9]+$/;
 
-    my $ds    = $self->ds;
+    my $ds    = $self->datastore;
     my $dir   = $ds->dir;
     my $name  = $ds->name;
 
@@ -406,7 +409,7 @@ sub STORE {
 sub DELETE {
     my( $self, $key ) = @_;
 
-    my $ds    = $self->ds;
+    my $ds    = $self->datastore;
     my $dir   = $ds->dir;
     my $name  = $ds->name;
 
@@ -451,7 +454,7 @@ sub CLEAR {
 sub FIRSTKEY {
     my( $self ) = @_;
 
-    my $ds    = $self->ds;
+    my $ds    = $self->datastore;
     my $dir   = $ds->dir;
     my $name  = $ds->name;
 
@@ -473,7 +476,7 @@ sub FIRSTKEY {
 sub NEXTKEY {
     my( $self, $prevkey ) = @_;
 
-    my $ds    = $self->ds;
+    my $ds    = $self->datastore;
     my $dir   = $ds->dir;
     my $name  = $ds->name;
 
@@ -504,7 +507,7 @@ sub NEXTKEY {
 
 sub SCALAR {
     my $self = shift;
-    $self->ds->howmany;  # create|update (not deletes)
+    $self->datastore->howmany;  # create|update (not deletes)
 }
 
 #---------------------------------------------------------------------
@@ -516,7 +519,7 @@ sub EXISTS {
     # block efforts to look at a "_keynum" entry
     croak qq/Unsupported key format: $key/ if $key =~ /^_[0-9]+$/;
 
-    my $ds    = $self->ds;
+    my $ds    = $self->datastore;
     return unless $ds->exists;
 
     my $dir   = $ds->dir;
@@ -612,7 +615,9 @@ sub AUTOLOAD {
          $method =~ s/.*:://;
     for( $method ) {
         croak qq/Unsupported method: $_/ unless /^
-             retrieve
+             name
+            |dir
+            |retrieve
             |retrieve_preamble
             |locate_record_data
             |history
@@ -624,7 +629,7 @@ sub AUTOLOAD {
     }
 
     my $self = shift;
-    $self->ds->$method( @_ );
+    $self->datastore->$method( @_ );
 }
 
 1;  # returned

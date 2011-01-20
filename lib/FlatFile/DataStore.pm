@@ -78,11 +78,11 @@ See FlatFile::DataStore::Tiehash for a tied interface.
 
 =head1 VERSION
 
-FlatFile::DataStore version 1.01
+FlatFile::DataStore version 1.02
 
 =cut
 
-our $VERSION = '1.01';
+our $VERSION = '1.02';
 
 use 5.008003;
 use strict;
@@ -2125,10 +2125,16 @@ sub write_bytes {
 
 sub read_file {
     my( $self, $file ) = @_;
+    untaint path => $file;
 
-    my $fh = $self->locked_for_read( $file );
+    my $fh;
+    open  $fh, '<', $file or croak qq/Can't open $file for read: $!/;
+    flock $fh, LOCK_SH    or croak qq/Can't lock $file shared: $!/;
+    # binmode $fh;  # NO binmode here, please
+
     return <$fh>;
 }
+
 
 #---------------------------------------------------------------------
 # 

@@ -271,6 +271,12 @@ my $ok_uri = join( ';' =>
 
     # should succeed:
 
+    my $test_name = $obj->name;
+    is( $test_name, $name, q/name() (AUTOLOAD)/ );
+
+    my $test_dir = $obj->dir;
+    is( $test_dir, $dir, q/dir() (AUTOLOAD)/ );
+
     my $record = $obj->retrieve( $keynum );
     ok( $record, q/retrieve() (AUTOLOAD)/ );
 
@@ -294,17 +300,6 @@ my $ok_uri = join( ';' =>
 
     my $nextkeynum = $obj->nextkeynum;
     is( $nextkeynum, 1, q/nextkeynum() (AUTOLOAD)/ );
-
-    # croak qq/Unsupported method: $_/ unless /^
-    #     retrieve           |
-    #     retrieve_preamble  |
-    #     locate_record_data |
-    #     history            |
-    #     userdata           |
-    #     howmany            |
-    #     lastkeynum         |
-    #     nextkeynum
-    #     $/x;
 
     eval {
         $obj->dummy();
