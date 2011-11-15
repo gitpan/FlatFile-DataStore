@@ -97,11 +97,11 @@ the data.
 
 =head1 VERSION
 
-FlatFile::DataStore::DBM version 1.02
+FlatFile::DataStore::DBM version 1.03
 
 =cut
 
-our $VERSION = '1.02';
+our $VERSION = '1.03';
 
 use 5.008003;
 use strict;
@@ -111,13 +111,6 @@ use Fcntl qw(:DEFAULT :flock);
 use Carp;
 
 use FlatFile::DataStore;
-
-#---------------------------------------------------------------------
-# globals
-
-our $dbm_package  = "SDBM_File";
-our $dbm_parms    = [ O_CREAT|O_RDWR, 0666 ];
-our $dbm_lock_ext = ".dir";
 
 #---------------------------------------------------------------------
 
@@ -183,7 +176,8 @@ sub get_key {
 
     # lock the dbm file and read the key
     $self->readlock;
-    tie my %dbm_hash, $dbm_package, "$dir/$name", @{$dbm_parms};
+    tie my %dbm_hash, $self->dbm_package, "$dir/$name", @{$self->dbm_parms}
+        or die "Can't tie dbm hash: $!";
 
     my $key = $dbm_hash{ "_$keynum" };
 
@@ -214,7 +208,8 @@ sub get_keynum {
 
     # lock the dbm file and read the keynum
     $self->readlock;
-    tie my %dbm_hash, $dbm_package, "$dir/$name", @{$dbm_parms};
+    tie my %dbm_hash, $self->dbm_package, "$dir/$name", @{$self->dbm_parms}
+        or die "Can't tie dbm hash: $!";
 
     my $keynum = $dbm_hash{ $key };
 
@@ -231,25 +226,62 @@ sub get_keynum {
 # Private methods.
 
 sub datastore     {for($_[0]->{datastore    }){$_=$_[1]if@_>1;return$_}}
-sub dbm_lock_file {for($_[0]->{dbm_lock_file}){$_=$_[1]if@_>1;return$_}}
 sub locked        {for($_[0]->{locked       }){$_=$_[1]if@_>1;return$_}}
+sub dbm_lock_file {for($_[0]->{dbm_lock_file}){$_=$_[1]if@_>1;return$_}}
+sub dbm_package   {for($_[0]->{dbm_package  }){$_=$_[1]if@_>1;return$_}}
+sub dbm_parms     {for($_[0]->{dbm_parms    }){$_=$_[1]if@_>1;return$_}}
+
+#---------------------------------------------------------------------
+# globals
+#
+# These are read in TIEHASH().  They may be changed prior to calling
+# tie(), e.g.,
+#
+# my $ds_parms = { name => $ds_name, dir => $ds_dir };
+# $FlatFile::DataStore::DBM::dbm_parms = [ O_RDONLY, 0666 ];
+#
+# tie my %hash, "FlatFile::DataStore::DBM", $ds_parms;
+#
+# ... or different values may be passed to tie() using a hash
+# reference as the second parameter, e.g.,
+#
+# my $ds_parms = { name => $ds_name, dir => $ds_dir };
+# my $dbm_specs = { dbm_parms => [ O_RDONLY, 0666 ] }
+#
+# tie my %hash, "FlatFile::DataStore::DBM", $ds_parms, $dbm_specs;
+#
+
+our $dbm_package  = "SDBM_File";
+our $dbm_parms    = [ O_CREAT|O_RDWR, 0666 ];
+our $dbm_lock_ext = ".dir";
 
 #---------------------------------------------------------------------
 # TIEHASH() supports tied hash access
+#
+# Coding note: in TIEHASH(), the object attributes are set directly in
+# the hash.  In all the other subs the above accessors are used.
+#
 
 sub TIEHASH {
+    my( $class, $ds_parms, $dbm_specs ) = @_;
 
-    eval qq{require $dbm_package; 1} or croak qq/Can't use $dbm_package: $@/;
-
-    my $class = shift;
-    my $ds    = FlatFile::DataStore->new( @_ );
-    my $dir   = $ds->dir;
-    my $name  = $ds->name;
+    my $ds   = FlatFile::DataStore->new( $ds_parms );
+    my $dir  = $ds->dir;
+    my $name = $ds->name;
 
     my $self = {
         datastore     => $ds,
-        dbm_lock_file => "$dir/$name$dbm_lock_ext",
+        dbm_package   => $dbm_package,  # may be changed by dbm_specs
+        dbm_parms     => $dbm_parms,    # "
+        dbm_lock_ext  => $dbm_lock_ext, # "
     };
+    if( $dbm_specs ) {
+        $self->{ $_ } = $dbm_specs->{ $_ } for keys %$dbm_specs;
+    }
+    $self->{'dbm_lock_file'} = "$dir/$name$self->{'dbm_lock_ext'}";
+
+    eval qq{require $self->{'dbm_package'}; 1}
+        or croak qq/Can't use $self->{'dbm_package'}: $@/;
 
     bless $self, $class;
 }
@@ -270,7 +302,8 @@ sub FETCH {
 
     # lock the dbm file and read the keynum
     $self->readlock;
-    tie my %dbm_hash, $dbm_package, "$dir/$name", @{$dbm_parms};
+    tie my %dbm_hash, $self->dbm_package, "$dir/$name", @{$self->dbm_parms}
+        or die "Can't tie dbm hash: $!";
 
     my $keynum = $dbm_hash{ $key };
 
@@ -318,7 +351,8 @@ sub STORE {
 
     # lock the dbm file and read the keynum
     $self->writelock;
-    tie my %dbm_hash, $dbm_package, "$dir/$name", @{$dbm_parms};
+    tie my %dbm_hash, $self->dbm_package, "$dir/$name", @{$self->dbm_parms}
+        or die "Can't tie dbm hash: $!";
 
     my $keynum  = $dbm_hash{ $key };
 
@@ -350,10 +384,8 @@ sub STORE {
 
         # hash, e.g., {data=>'record data',user=>'user data'}
         elsif( $reftype eq 'HASH' ) {
-            $record = $ds->retrieve( $keynum );
-            for( $parms->{'data'} ) { $record->data( $_ ) if defined }
-            for( $parms->{'user'} ) { $record->user( $_ ) if defined }
-            $record = $ds->update( $record );
+            $parms->{'record'} = $ds->retrieve( $keynum ) unless $parms->{'record'};
+            $record = $ds->update( $parms );
         }
 
         else {
@@ -414,7 +446,8 @@ sub DELETE {
     my $name  = $ds->name;
 
     $self->writelock;
-    tie my %dbm_hash, $dbm_package, "$dir/$name", @{$dbm_parms};
+    tie my %dbm_hash, $self->dbm_package, "$dir/$name", @{$self->dbm_parms}
+        or die "Can't tie dbm hash: $!";
 
     my $exists;
     my $record;
@@ -460,7 +493,8 @@ sub FIRSTKEY {
 
     # lock the dbm file and read the first key (stored as '_0')
     $self->readlock;
-    tie my %dbm_hash, $dbm_package, "$dir/$name", @{$dbm_parms};
+    tie my %dbm_hash, $self->dbm_package, "$dir/$name", @{$self->dbm_parms}
+        or die "Can't tie dbm hash: $!";
 
     my $firstkey = $dbm_hash{ '_0' };
 
@@ -484,7 +518,8 @@ sub NEXTKEY {
 
     # lock the dbm file and get the prev key's keynum
     $self->readlock;
-    tie my %dbm_hash, $dbm_package, "$dir/$name", @{$dbm_parms};
+    tie my %dbm_hash, $self->dbm_package, "$dir/$name", @{$self->dbm_parms}
+        or die "Can't tie dbm hash: $!";
 
     my $keynum = $dbm_hash{ $prevkey };
 
@@ -527,7 +562,8 @@ sub EXISTS {
 
     # lock the dbm file and call exists on dbm hash
     $self->readlock;
-    tie my %dbm_hash, $dbm_package, "$dir/$name", @{$dbm_parms};
+    tie my %dbm_hash, $self->dbm_package, "$dir/$name", @{$self->dbm_parms}
+        or die "Can't tie dbm hash: $!";
 
     my $exists = exists $dbm_hash{ $key };
 

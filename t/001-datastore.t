@@ -137,7 +137,7 @@ my $desc = "Example FlatFile::DataStore";
         "create()" );
 
     my $data = $record->data();
-    is( $$data, "This is testing record1.", "data()" );
+    is( $data, "This is testing record1.", "data()" );
 
     my $keynum = $record->keynum();
     is( $keynum, 0, "keynum()" );
@@ -179,8 +179,8 @@ my $desc = "Example FlatFile::DataStore";
     my $updrec = $ds->update({ record => $record, data => "Updated Record", user => "Updated1" });
 
     my $rec_data = $updrec->data;
-    is( $$rec_data,    "Updated Record", "rec->data()" );
-    is( $updrec->user, "Updated1",       "rec->user()" );
+    is( $rec_data,    "Updated Record", "rec->data()" );
+    is( $updrec->user, "Updated1",      "rec->user()" );
     ok( $updrec->is_updated, "is_updated()" );
 
     my $delrec = $ds->delete( $updrec );
@@ -196,13 +196,13 @@ my $desc = "Example FlatFile::DataStore";
     $record2 = $ds->retrieve( $record->keynum );
     my $recdata  = $record->data;
     my $recdata2 = $record2->data;
-    is( $$recdata, $$recdata2, "create( record )" );
+    is( $recdata, $recdata2, "create( record )" );
 
     $record2 = $ds->create({ record => $record, user => 'other user' });
     is( $record2->user, 'other user', "create( record, user data )" );
 
     $record = $ds->create({ data => \"Apple", user => 'fruit' });
-    is( ${$record->data}, 'Apple', "create( scalar-ref, user data )" );
+    is( $record->data, 'Apple', "create( scalar-ref, user data )" );
     is( $record->user, 'fruit', "create( scalar-ref, user data )" );
 }
 

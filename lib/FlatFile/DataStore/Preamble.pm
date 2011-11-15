@@ -50,18 +50,20 @@ record.
 
 =head1 VERSION
 
-FlatFile::DataStore::Preamble version 1.02
+FlatFile::DataStore::Preamble version 1.03
 
 =cut
 
-our $VERSION = '1.02';
+our $VERSION = '1.03';
 
 use 5.008003;
 use strict;
 use warnings;
 
 use Carp;
+
 use Math::Int2Base qw( base_chars int2base base2int );
+
 use Data::Omap qw( :ALL );
 
 my %Generated = qw(

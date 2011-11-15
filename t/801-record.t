@@ -112,7 +112,7 @@ my $value = "This is a test.";
 
  $record->data(     $value ); # actual record data as a scalar ref
 
-is( ${$record->data}, $value, "data()" );
+is( $record->data, $value, "data()" );
 
 $value = $preamble;
 

@@ -49,11 +49,11 @@ likely call the accessors.
 
 =head1 VERSION
 
-FlatFile::DataStore::Record version 1.02
+FlatFile::DataStore::Record version 1.03
 
 =cut
 
-our $VERSION = '1.02';
+our $VERSION = '1.03';
 
 use 5.008003;
 use strict;
@@ -113,7 +113,7 @@ sub init {
             if( ref eq 'SCALAR' ) { $self->data( $_  ) }
             else                  { $self->data( \$_ ) }
         }
-        else                      { $self->data( \"" ) }
+        else          { my $s = ''; $self->data( \$s ) }
     }
 
     if( my $preamble = $parms->{'preamble'} ) {
@@ -131,12 +131,30 @@ The following read/write methods set and return their respective
 attribute values if C<$value> is given.  Otherwise, they just return
 the value.
 
- $record->data(     $value ); # actual record data as a scalar ref
- $record->preamble( $value ); # FlatFile::DataStore::Preamble object
+The value parameter to data() and dataref() may be a scalar or scalar ref.
+The return value of data() is always the scalar value.
+The return value of dataref() is always the scalar ref.
+
+The value given to dataref() should be a scalar ref, and dataref() will
+always return a scalar ref.
+
+    $record->data(     $value );
+    $record->dataref(  $value );
+
+    $record->preamble( $value ); # FlatFile::DataStore::Preamble object
 
 =cut
 
-sub data     {
+sub data {
+    my( $self, $data ) = @_;
+    return ${$self->{data}} unless $data;
+    for( $data ) {
+        if( ref eq 'SCALAR' ) { $self->{data} = $_  }
+        else                  { $self->{data} = \$_ }
+    }
+}
+
+sub dataref {
     my( $self, $data ) = @_;
     return $self->{data} unless $data;
     for( $data ) {

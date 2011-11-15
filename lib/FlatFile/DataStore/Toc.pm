@@ -34,11 +34,11 @@ any of it's methods yourself.
 
 =head1 VERSION
 
-FlatFile::DataStore::Toc version 1.02
+FlatFile::DataStore::Toc version 1.03
 
 =cut
 
-our $VERSION = '1.02';
+our $VERSION = '1.03';
 
 use 5.008003;
 use strict;
@@ -46,6 +46,7 @@ use warnings;
 
 use File::Path;
 use Carp;
+
 use Math::Int2Base qw( base_chars int2base base2int );
 
 my %Attrs = qw(
@@ -115,8 +116,7 @@ sub init {
         croak qq/Missing: int or num/;
     }
 
-    my $sref = $self->read_toc( $datafint );
-    my $string = $sref? $$sref: '';
+    my $string = $self->read_toc( $datafint );
 
     unless( $string ) {
         $self->datafnum( $datafint );
@@ -132,7 +132,7 @@ sub init {
     my $transbase = $ds->transbase;
 
     my $recsep = $ds->recsep;
-    $string =~ s/$recsep$//;  # chompish
+    $string =~ s/\Q$recsep\E$//;  # chompish
     $self->string( $string );
 
     my @fields = split " ", $string;
@@ -214,6 +214,16 @@ sub read_toc {
     my $tocfile = $self->tocfile( $fint );
     return unless -e $tocfile;
 
+    # look in tocs cache
+    # XXX is there a race condition between -M and locked_for_read?
+    if( my $tocs = $ds->tocs->{ $tocfile } ) {
+        if( -M _ <= $tocs->{'-M'} ) {  # unchanged
+            for( $tocs->{ $fint } ) {
+                return $_ if defined;
+            }
+        }
+    }
+
     my $tocfh  = $ds->locked_for_read( $tocfile );
     my $toclen = $ds->toclen;
 
@@ -227,7 +237,11 @@ sub read_toc {
     my $tocline = $ds->read_bytes( $tocfh, $seekpos, $toclen );
     close $tocfh or croak qq/Can't close $tocfile: $!/;
 
-    $tocline;  # returned
+    # write to tocs cache
+    $ds->tocs->{ $tocfile }{'-M'}    = -M $tocfile;
+    $ds->tocs->{ $tocfile }{ $fint } = $$tocline;
+
+    $$tocline;  # returned
 }
 
 #---------------------------------------------------------------------
@@ -255,8 +269,14 @@ sub write_toc {
     else {
         $seekpos = $toclen * $fint; }
 
-    $ds->write_bytes( $tocfh, $seekpos, \($self->to_string) );
+    my $tocline = $self->to_string;
+
+    $ds->write_bytes( $tocfh, $seekpos, \$tocline );
     close $tocfh or croak qq/Can't close $tocfile: $!/;
+
+    # write to tocs cache
+    $ds->tocs->{ $tocfile }{'-M'}    = -M $tocfile;
+    $ds->tocs->{ $tocfile }{ $fint } = $tocline;
 }
 
 #---------------------------------------------------------------------

@@ -1,5 +1,15 @@
 Revision history for Perl extension FlatFile::DataStore.
 
+1.03 Thu Jan 20 15:30:09 EST 2011
+    - major API change:
+      - FF::DS::Record::data() now returns a scalar (not a scalar ref)
+      - the new FF::DS::Record::dataref() returns a scalar ref
+      - both still accept a scalar or scalar ref when setting the data value
+    - FlatFile::DataStore::DBM:
+      - fix logic error wrt updates, w/ tests
+      - store dbm_* globals in object instance
+      - add extra "dbm specs" parameter to new()
+
 1.02 Thu Jan 20 15:20:48 EST 2011
     - fix binmode in read_file() (to correct failing tests under windows)
 

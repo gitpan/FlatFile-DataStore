@@ -78,11 +78,11 @@ See FlatFile::DataStore::Tiehash for a tied interface.
 
 =head1 VERSION
 
-FlatFile::DataStore version 1.02
+FlatFile::DataStore version 1.03
 
 =cut
 
-our $VERSION = '1.02';
+our $VERSION = '1.03';
 
 use 5.008003;
 use strict;
@@ -92,13 +92,13 @@ use URI::Escape;
 use File::Path;
 use Fcntl qw(:DEFAULT :flock);
 use Digest::MD5 qw(md5_hex);
-use Data::Dumper;
 use Carp;
 
 use FlatFile::DataStore::Preamble;
 use FlatFile::DataStore::Record;
 use FlatFile::DataStore::Toc;
 use Math::Int2Base qw( base_chars int2base base2int );
+
 use Data::Omap qw( :ALL );
 sub untaint;
 
@@ -137,6 +137,7 @@ my %Optional = qw(
 my %Generated = qw(
     uri         1
     crud        1
+    userlen     1
     dateformat  1
     specs       1
     regx        1
@@ -149,6 +150,7 @@ my %Generated = qw(
     keybase     1
     toclen      1
     datamax     1
+    tocs        1
     );
 
 # all attributes, including some more user-supplied ones
@@ -366,6 +368,7 @@ sub init {
         $self->dateformat( (split /-/, $self->date)[1] );
         $self->regx(       $self->make_preamble_regx   );
         $self->crud(       $self->make_crud            );
+        $self->tocs(       {}                          );
         $self->dir(        $dir                        );  # dir not in uri
 
         $self->toclen( 10          +  # blanks between parts
@@ -406,6 +409,10 @@ sub init {
 
         if( my $max = $self->tocmax ) {
             $self->tocmax( convert_max( $max ) );
+        }
+
+        if( my $user = $self->user ) {
+            $self->userlen( (split /-/, $user)[0] );
         }
 
         for my $attr ( keys %Attrs ) {
@@ -570,11 +577,18 @@ Returns a Flatfile::DataStore::Record object.
 sub retrieve {
     my( $self, $num, $pos ) = @_;
 
+    for( $num ) {
+        croak qq/Not a number: '$_'/ unless m{^ [0-9]+ $}x;
+    }
+
     my $fnum;
     my $seekpos;
     my $keystring;
 
     if( defined $pos ) {
+        for( $pos ) {
+            croak qq/Not a number: '$_'/ unless m{^ [0-9]+ $}x;
+        }
         $fnum    = $num;
         $seekpos = $pos;
     }
@@ -632,6 +646,10 @@ retrieving the full record data.
 sub retrieve_preamble {
     my( $self, $keynum ) = @_;
 
+    for( $keynum ) {
+        croak qq/Not a number: '$_'/ unless m{^ [0-9]+ $}x;
+    }
+
     my $keyseek = $self->keyseek( $keynum );
     my $keyfile = $self->keyfile( $keynum );
     my $keyfh   = $self->locked_for_read( $keyfile );
@@ -687,10 +705,17 @@ newline.  Also keep in mind that the file is opened in binmode,
 so you will be reading bytes (octets), not necessarily characters.
 Decoding these octets is up to you.
 
+XXX ("opened in binmode"?) does that make the example wrong
+    wrt non-unix OS's
+
 =cut
 
 sub locate_record_data {
     my( $self, $num, $pos ) = @_;
+
+    for( $num ) {
+        croak qq/Not a number: '$_'/ unless m{^ [0-9]+ $}x;
+    }
 
     my $fnum;
     my $seekpos;
@@ -698,6 +723,9 @@ sub locate_record_data {
     my $reclen;
 
     if( defined $pos ) {
+        for( $pos ) {
+            croak qq/Not a number: '$_'/ unless m{^ [0-9]+ $}x;
+        }
         $fnum    = $num;
         $seekpos = $pos;
     }
@@ -1115,7 +1143,7 @@ sub normalize_parms {
 
     my $reftype = ref $parms;
     if( $reftype =~ /Record/ ) {
-        $data_ref  = $parms->data;
+        $data_ref  = $parms->dataref;
         $user_data = $parms->user;
         $preamble  = $parms->preamble;
     }
@@ -1136,7 +1164,7 @@ sub normalize_parms {
         }
         for( $parms->{'record'} ) {
             last unless defined;
-            $data_ref  = $_->data     unless $data_ref;
+            $data_ref  = $_->dataref  unless $data_ref;
             $user_data = $_->user     unless defined $user_data;
             $preamble  = $_->preamble unless $preamble;
         }
@@ -1216,6 +1244,10 @@ chronological order.
 
 sub history {
     my( $self, $keynum ) = @_;
+
+    for( $keynum ) {
+        croak qq/Not a number: '$_'/ unless m{^ [0-9]+ $}x;
+    }
 
     my @history;
 
@@ -1344,9 +1376,10 @@ if C<$value> is given.  Otherwise, they just return the value.
  $ds->keylen(      [$value] ); # length of stored keynum
  $ds->keybase(     [$value] ); # base   of stored keynum
  $ds->translen(    [$value] ); # length of stored transaction number
- $ds->transbase(   [$value] ); # base   of stored transation number
+ $ds->transbase(   [$value] ); # base   of stored transaction number
  $ds->fnumlen(     [$value] ); # length of stored file number
  $ds->fnumbase(    [$value] ); # base   of stored file number
+ $ds->userlen(     [$value] ); # format from uri
  $ds->dateformat(  [$value] ); # format from uri
  $ds->regx(        [$value] ); # capturing regx for preamble string
  $ds->datamax(     [$value] ); # maximum bytes in a data file
@@ -1419,9 +1452,11 @@ sub name        {for($_[0]->{name}        ){$_=$_[1]if@_>1;return$_}}
 sub desc        {for($_[0]->{desc}        ){$_=$_[1]if@_>1;return$_}}
 sub recsep      {for($_[0]->{recsep}      ){$_=$_[1]if@_>1;return$_}}
 sub uri         {for($_[0]->{uri}         ){$_=$_[1]if@_>1;return$_}}
+sub userlen     {for($_[0]->{userlen}     ){$_=$_[1]if@_>1;return$_}}
 sub dateformat  {for($_[0]->{dateformat}  ){$_=$_[1]if@_>1;return$_}}
 sub regx        {for($_[0]->{regx}        ){$_=$_[1]if@_>1;return$_}}
 sub crud        {for($_[0]->{crud}        ){$_=$_[1]if@_>1;return$_}}
+sub tocs        {for($_[0]->{tocs}        ){$_=$_[1]if@_>1;return$_}}
 sub datamax     {for($_[0]->{datamax}     ){$_=$_[1]if@_>1;return$_}}
 
 sub preamblelen {for($_[0]->{preamblelen} ){$_=0+$_[1]if@_>1;return$_}}

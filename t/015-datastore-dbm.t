@@ -80,7 +80,7 @@ is( $try, $id, "get_key()" );
 
     $record = $dshash{ $id };
 
-is( ${$record->data}, "Updating the test record.", "update/retrieve" );
+is( $record->data, "Updating the test record.", "update/retrieve" );
 
     # delete it
 
@@ -100,22 +100,28 @@ my $user_data   = "userdata";
 
  $record = $dshash{ $id } = $record_data;
 
-is( ${$dshash{ $id }->data}, $record_data, "scalar record data" );
+is( $dshash{ $id }->data, $record_data, "scalar record data" );
 is( $dshash{ $id }->user, "", "scalar record data ... user data default" );
 
  $id++;
  $record = $dshash{ $id } = { data => $record_data, user => $user_data };
 
-is( ${$dshash{ $id }->data}, $record_data, "href record data" );
+is( $dshash{ $id }->data, $record_data, "href record data" );
 is( $dshash{ $id }->user, $user_data, "href user data" );
 
  $id++;
  $record->data( $record_data );
- $record->user( $user_data );
+ $record->user( $user_data );  # XXX wrong, user() is readonly
  $record = $dshash{ $id } = $record;
 
-is( ${$dshash{ $id }->data}, $record_data, "object record data" );
+is( $dshash{ $id }->data, $record_data, "object record data" );
 is( $dshash{ $id }->user, $user_data, "object user data" );
+
+ # update
+ $dshash{ $id } = { data => "xxx", user => "yyy" };
+
+is( $dshash{ $id }->data, "xxx", "object record data (update)" );
+is( $dshash{ $id }->user, "yyy", "object user data (update)" );
 
 }
 

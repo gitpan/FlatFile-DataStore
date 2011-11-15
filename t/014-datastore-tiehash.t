@@ -78,7 +78,7 @@ is( $record_number, 0, "first record number" );
 
     $record = $dshash{ $record_number };
 
-is( ${$record->data}, "Updating the test record.", "update/retrieve" );
+is( $record->data, "Updating the test record.", "update/retrieve" );
 
     # delete it
 
@@ -99,19 +99,19 @@ my $user_data   = "userdata";
 
  $record = $dshash{''} = $record_data;
 
-is( ${$dshash{ $record->keynum }->data}, $record_data, "scalar record data" );
+is( $dshash{ $record->keynum }->data, $record_data, "scalar record data" );
 is( $dshash{ $record->keynum }->user, "", "scalar record data ... user data default" );
 
  $record = $dshash{''} = { data => $record_data, user => $user_data };
 
-is( ${$dshash{ $record->keynum }->data}, $record_data, "href record data" );
+is( $dshash{ $record->keynum }->data, $record_data, "href record data" );
 is( $dshash{ $record->keynum }->user, $user_data, "href user data" );
 
  $record->data( $record_data );
  $record->user( $user_data );
  $record = $dshash{''} = $record;
 
-is( ${$dshash{ $record->keynum }->data}, $record_data, "object record data" );
+is( $dshash{ $record->keynum }->data, $record_data, "object record data" );
 is( $dshash{ $record->keynum }->user, $user_data, "object user data" );
 
 }

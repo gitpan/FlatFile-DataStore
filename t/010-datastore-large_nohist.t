@@ -60,6 +60,6 @@ push @recs, $ds->create({ data => 'Test Record 3' });
 
 for( my $i = 0; $i < 2; $i++ ) {
     my $rec = $ds->retrieve( $i );
-    is( ${$rec->data}, ${$recs[$i]->data}, "large_nohist rec data" );
+    is( $rec->data, $recs[$i]->data, "large_nohist rec data" );
 }
 }
